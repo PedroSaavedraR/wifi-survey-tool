@@ -1,0 +1,19 @@
+# Configuracion local con identificadores reales
+/config.json
+
+# Capturas con SSID y metadatos de ubicacion/equipo
+/data/*.jsonl
+
+# Memoria tecnica con informacion de la vivienda y las redes
+/memoria_practica1_redes_moviles.pdf
+/memoria_practica1_redes_moviles.tex
+
+# Graficos y planos generados localmente
+/validation/*.png
+/validation/generate_floorplan.py
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/

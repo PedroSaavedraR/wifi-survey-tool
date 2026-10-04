@@ -1,0 +1,8 @@
+{
+  "device_id": "example-device",
+  "default_campaign": "example-campaign",
+  "building": "example-building",
+  "floor": "Floor_1",
+  "default_interval": 3,
+  "default_samples": 10
+}
