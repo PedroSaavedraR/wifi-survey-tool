@@ -1,151 +1,154 @@
 # WiFi Coverage Survey Tool (Windows)
 
-Herramienta de línea de comandos para consultar y registrar la conexión WiFi activa y, opcionalmente, las redes visibles. Cada captura incluye una marca temporal y etiquetas de campaña y ubicación para su análisis posterior. Nombre sugerido para el repositorio: `wifi-coverage-survey`.
+[English](README.md) | [Español](README.es.md)
 
-## 1. Entorno y requisitos
+A command-line tool for querying and recording the active WiFi connection and, optionally, visible networks. Each capture includes a timestamp and campaign and location labels for later analysis. Suggested repository name: `wifi-coverage-survey`.
 
-* **Sistema operativo probado:** Windows 11.
-* **Equipo de prueba:** Lenovo LOQ 15 con adaptador WiFi MediaTek MT7921.
-* **Intérprete:** Python 3.8 o posterior. La versión comprobada en el equipo de prueba es Python 3.14.6.
-* **Utilidades del sistema:** `netsh.exe` y la API WLAN nativa de Windows.
-* **Dependencias:** `wifi_scanner.py` utiliza la biblioteca estándar de Python. Para generar gráficos, instale `matplotlib`:
+## 1. Environment and requirements
+
+* **Tested operating system:** Windows 11.
+* **Test device:** Lenovo LOQ 15 with a MediaTek MT7921 WiFi adapter.
+* **Interpreter:** Python 3.8 or later. The version verified on the test device is Python 3.14.6.
+* **System utilities:** `netsh.exe` and the native Windows WLAN API.
+* **Dependencies:** `wifi_scanner.py` uses the Python standard library. Install `matplotlib` to generate charts:
 
 ```cmd
 python -m pip install matplotlib
 ```
 
-La opción `--all` solicita un escaneo mediante la API WLAN de Windows. En el equipo de prueba fue necesario habilitar los servicios de ubicación de Windows y ejecutar el recolector con privilegios de administrador para obtener redes visibles. Estos requisitos pueden variar según la versión de Windows, el adaptador y sus controladores.
+The `--all` option requests a scan through the Windows WLAN API. On the test device, Windows location services had to be enabled and the collector had to be run with administrator privileges to retrieve visible networks. These requirements may vary depending on the Windows version, adapter, and drivers.
 
-## 2. Instalación y archivos
+## 2. Installation and files
 
-No se requieren paquetes externos para adquirir datos. Abra una terminal en la carpeta del proyecto. Compruebe la instalación de Python con:
+No external packages are required to collect data. Open a terminal in the project folder. Check the Python installation with:
 
 ```cmd
 python --version
 ```
 
-Para crear la configuración local a partir de la plantilla, ejecute en PowerShell:
+To create the local configuration from the template, run this command in PowerShell:
 
 ```powershell
 Copy-Item config.example.json config.json
 ```
 
-Edite `config.json` con las etiquetas de equipo y campaña. Este archivo local queda excluido de Git.
+Edit `config.json` with the device and campaign labels. This local file is excluded from Git.
 
-Instale `matplotlib` únicamente si desea generar los gráficos. Los archivos que se mantienen en el repositorio son:
+Install `matplotlib` only if you want to generate charts. The files tracked in the repository are:
 
-* `wifi_scanner.py`: adquisición, etiquetado y almacenamiento de capturas.
-* `config.example.json`: plantilla sin identificadores personales.
-* `validation/generate_chart.py`: generación de gráficos a partir de los datos.
+* `wifi_scanner.py`: data collection, labeling, and capture storage.
+* `config.example.json`: template without personal identifiers.
+* `validation/generate_chart.py`: chart generation from the data.
 
-El archivo `.gitignore` excluye la configuración local, las capturas JSONL, la memoria técnica, las imágenes y el script del plano, ya que pueden contener SSID, ubicaciones o detalles de la vivienda. El recolector crea `data/` al ejecutarse.
+`.gitignore` excludes the local configuration, JSONL captures, technical report, images, and floor plan script, as they may contain SSIDs, locations, or details about the home. The collector creates `data/` when it runs.
 
-## 3. Configuración
+## 3. Configuration
 
-El recolector carga `config.json` al iniciarse. En la configuración de ejemplo se utilizan estos campos:
+The collector loads `config.json` at startup. The example configuration uses these fields:
 
-* `device_id`: identificador del equipo de medida.
-* `default_campaign`: identificador de la campaña.
-* `building` y `floor`: edificio y planta.
-* `default_interval`: intervalo solicitado entre capturas, en segundos.
-* `default_samples`: número de capturas por ejecución.
+* `device_id`: identifier for the measurement device.
+* `default_campaign`: campaign identifier.
+* `building` and `floor`: building and floor.
+* `default_interval`: requested interval between captures, in seconds.
+* `default_samples`: number of captures per run.
 
-Las opciones `--room`, `--orientation`, `--interval` y `--samples` permiten indicar esos valores para una ejecución concreta. El intervalo representa la espera solicitada entre capturas, no garantiza por sí solo el tiempo real entre marcas temporales.
+The `--room`, `--orientation`, `--interval`, and `--samples` options let you set these values for an individual run. The interval is the requested wait between captures; it does not by itself guarantee the actual time between timestamps.
 
-## 4. Adquisición
+## 4. Data collection
 
-### Conexión activa
+### Active connection
 
-Para iniciar el recolector con los valores predeterminados, ejecute:
+To start the collector with the default values, run:
 
 ```cmd
 python wifi_scanner.py
 ```
 
-Para especificar las etiquetas y la cadencia directamente, ejecute, por ejemplo:
+To specify labels and the capture interval directly, for example, run:
 
 ```cmd
-python wifi_scanner.py --room "Sala de pruebas" --orientation "0-Norte" --interval 3 --samples 10
+python wifi_scanner.py --room "Test room" --orientation "0-North" --interval 3 --samples 10
 ```
 
-Este modo consulta la conexión activa y guarda únicamente el punto de acceso conectado en `data/screenshots.jsonl`. Las capturas se añaden al final del archivo; una ejecución nueva no elimina las anteriores.
+This mode queries the active connection and saves only the connected access point to `data/screenshots.jsonl`. Captures are appended to the file; a new run does not delete earlier captures.
 
-### Todas las redes visibles
+### All visible networks
 
-Para solicitar un escaneo nuevo de Windows y registrar las redes detectadas, añada `--all`:
+To request a new Windows scan and record the detected networks, add `--all`:
 
 ```cmd
-python wifi_scanner.py --room "Sala de pruebas" --orientation "0-Norte" --interval 5 --samples 10 --all
+python wifi_scanner.py --room "Test room" --orientation "0-North" --interval 5 --samples 10 --all
 ```
 
-El modo `--all` guarda sus registros por separado en `data/screenshots_all.jsonl`. Su intervalo mínimo es de 5 segundos: si el valor indicado en la línea de comandos o en `config.json` es menor, el recolector lo eleva a 5 segundos y lo comunica. El escaneo añade aproximadamente 4 segundos más por captura; por tanto, el tiempo real entre capturas será superior al intervalo configurado. Consulte `timestamp_utc` para conocer la cadencia observada.
+The `--all` mode saves its records separately to `data/screenshots_all.jsonl`. Its minimum interval is 5 seconds: if the value specified on the command line or in `config.json` is lower, the collector raises it to 5 seconds and reports this. The scan adds approximately 4 seconds per capture, so the actual time between captures will be longer than the configured interval. Check `timestamp_utc` to determine the observed interval.
 
-### Parada
+### Stopping
 
-Para detener la adquisición, pulse `Ctrl+C` en la terminal. Cada registro se escribe antes de esperar a la siguiente captura, por lo que las medidas ya guardadas se conservan.
+To stop data collection, press `Ctrl+C` in the terminal. Each record is written before waiting for the next capture, so measurements already saved are retained.
 
-## 5. Formato de los datos
+## 5. Data format
 
-Los dos archivos de datos utilizan JSON Lines (JSONL): cada línea es un objeto JSON independiente. Se pueden abrir con un editor de texto o procesar desde otros programas.
+Both data files use JSON Lines (JSONL): each line is an independent JSON object. They can be opened in a text editor or processed by other programs.
 
-Los registros actuales contienen los siguientes campos principales:
+Current records contain these main fields:
 
-* `metadata`: `timestamp_utc`, `device_id`, `campaign`, `building`, `floor`, `room`, `orientation` y `network_scope`.
-* `active_interface`: estado, SSID, BSSID seudonimizado, señal porcentual, RSSI en dBm, canal, banda, tipo de radio y tasas de recepción y transmisión cuando Windows las proporciona. Si falla la consulta de la interfaz, puede contener `error` en lugar de estos campos.
-* `visible_networks`: SSID detectados y sus BSSID seudonimizados, señal porcentual, canal y tipo de radio. En el modo predeterminado contiene el punto de acceso activo; con `--all` contiene las redes visibles del escaneo.
-* `network_scan`: estado del escaneo solicitado en modo `--all` y, si se produce un error, su mensaje.
+* `metadata`: `timestamp_utc`, `device_id`, `campaign`, `building`, `floor`, `room`, `orientation`, and `network_scope`.
+* `active_interface`: connection status, SSID, pseudonymized BSSID, signal percentage, RSSI in dBm, channel, band, radio type, and receive and transmit rates when provided by Windows. If querying the interface fails, this field may contain `error` instead.
+* `visible_networks`: detected SSIDs and their pseudonymized BSSIDs, signal percentage, channel, and radio type. In the default mode, this contains the active access point; with `--all`, it contains the visible networks from the scan.
+* `network_scan`: status of the scan requested in `--all` mode and, if an error occurs, its message.
 
-`network_scan.status` puede tomar estos valores:
+`network_scan.status` can have these values:
 
-* `not_requested`: modo predeterminado; no se solicitó un escaneo de redes visibles.
-* `success`: el escaneo y la consulta terminaron correctamente. Una lista `visible_networks` vacía significa que no se detectaron redes.
-* `error`: Windows no pudo iniciar el escaneo o falló la consulta de redes. El mensaje queda en `network_scan.message`; la lista vacía no debe interpretarse como una medida válida sin redes.
+* `not_requested`: default mode; no visible-network scan was requested.
+* `success`: the scan and query completed successfully. An empty `visible_networks` list means no networks were detected.
+* `error`: Windows could not start the scan or the network query failed. The message is saved in `network_scan.message`; the empty list must not be interpreted as a valid measurement showing no networks.
 
-Los valores no disponibles se omiten del JSON, no se sustituyen por cero. `signal_percent` es una estimación porcentual de Windows, no una medida en dBm. El RSSI en dBm corresponde a la conexión activa. Los BSSID se guardan como el prefijo de 12 caracteres hexadecimales de un hash SHA-256 para poder distinguir puntos de acceso entre capturas. Los SSID se conservan tal como los informa Windows.
+Unavailable values are omitted from the JSON, not replaced with zero. `signal_percent` is a Windows percentage estimate, not a measurement in dBm. RSSI in dBm is for the active connection. BSSIDs are stored as the first 12 hexadecimal characters of a SHA-256 hash so access points can be distinguished between captures. SSIDs are retained as reported by Windows.
 
-Las muestras históricas pueden no incluir todas las claves del esquema actual. En los datos revisados el 4 de octubre de 2026, los 59 registros de `screenshots.jsonl` son anteriores a la incorporación de `network_scope` y `network_scan`. Los 10 registros iniciales de `screenshots_all.jsonl` incluyen `network_scope`, pero son anteriores a `network_scan`. Los registros nuevos incluyen ambos campos.
+Historical samples may not include every key in the current schema. In the data reviewed on October 4, 2026, all 59 records in `screenshots.jsonl` predate the addition of `network_scope` and `network_scan`. The initial 10 records in `screenshots_all.jsonl` include `network_scope`, but predate `network_scan`. New records include both fields.
 
-## 6. Gráficos y validación
+## 6. Charts and validation
 
-Para generar el gráfico de RSSI y tasa de recepción de la conexión activa, ejecute:
+To generate a chart of the active connection's RSSI and receive rate, run:
 
 ```cmd
 python validation/generate_chart.py
 ```
 
-Para representar la señal porcentual de todos los BSSID del archivo `--all`, ejecute:
+To chart the signal percentage for all BSSIDs in the `--all` file, run:
 
 ```cmd
 python validation/generate_chart.py --all
 ```
 
-Puede filtrar el gráfico por el nombre SSID exacto:
+You can filter the chart by the exact SSID name:
 
 ```cmd
-python validation/generate_chart.py --all --ssid "SSID_de_ejemplo"
+python validation/generate_chart.py --all --ssid "Example_SSID"
 ```
 
-Los gráficos se guardan como `validation/validation_chart.png`, `validation/validation_chart_all.png` y, al filtrar, `validation/validation_chart_all_<SSID>.png`. Los valores ausentes se muestran como huecos, no como valores inventados.
+Charts are saved as `validation/validation_chart.png`, `validation/validation_chart_all.png`, and, when filtering, `validation/validation_chart_all_<SSID>.png`. Missing values are shown as gaps, not invented values.
 
-El plano de validación se conserva localmente en `validation/floorplan.png` y se excluye del repositorio porque muestra la distribución de la vivienda.
+The validation floor plan is kept locally in `validation/floorplan.png` and excluded from the repository because it shows the layout of the home.
 
-Las capturas y resultados experimentales se conservan localmente en los archivos JSONL; no se incluyen en el repositorio público porque contienen identificadores de redes y etiquetas de ubicación.
+Captures and experimental results are kept locally in the JSONL files; they are not included in the public repository because they contain network identifiers and location labels.
 
-Para contrastar manualmente los campos con Windows, ejecute las consultas del sistema en una terminal:
+To manually compare fields with Windows, run the system queries in a terminal:
 
 ```cmd
 netsh wlan show interfaces
 netsh wlan show networks mode=bssid
 ```
 
-Anote los valores observados y la hora de la comprobación e incluya la comparación en la memoria técnica. Las consultas no son simultáneas con la captura de la aplicación; tenga en cuenta esta diferencia temporal al interpretar los resultados.
+Record the observed values and the time of the check, then include the comparison in the technical report. The queries are not simultaneous with the application capture; account for this time difference when interpreting the results.
 
-## 7. Limitaciones y solución de problemas
-Los datos conservan los SSID sin transformación y las ubicaciones definidas en `config.json`. Revise esta información antes de publicar el repositorio o compartir los datos.
+## 7. Limitations and troubleshooting
 
-* El recolector está orientado a Windows y depende de `netsh` y de la API WLAN nativa.
-* La cantidad de redes visibles depende del adaptador, los controladores, los permisos y las condiciones del entorno. Un escaneo puede devolver menos redes que la interfaz gráfica de Windows.
-* Si `network_scan.status` es `error`, compruebe que la interfaz WiFi está habilitada, que los servicios de ubicación de Windows están activos y que la terminal tiene los permisos necesarios. El mensaje de error se conserva en el JSONL.
-* Si el escaneo termina con `success` y `visible_networks` está vacío, no se detectaron redes en esa consulta; no es lo mismo que un error.
-* El intervalo real puede superar el solicitado por el tiempo de adquisición, especialmente en modo `--all`. Utilice las marcas temporales para calcularlo.
-* Las ubicaciones y orientaciones se introducen manualmente; la herramienta no obtiene coordenadas GPS ni genera mapas.
+SSID values are kept unmodified, as are the locations defined in `config.json`. Review this information before publishing the repository or sharing the data.
+
+* The collector is designed for Windows and depends on `netsh` and the native WLAN API.
+* The number of visible networks depends on the adapter, drivers, permissions, and environmental conditions. A scan may return fewer networks than the Windows graphical interface.
+* If `network_scan.status` is `error`, check that the WiFi interface is enabled, Windows location services are active, and the terminal has the required permissions. The error message is retained in the JSONL file.
+* If the scan completes with `success` and `visible_networks` is empty, no networks were detected by that query; this is different from an error.
+* The actual interval may exceed the requested interval due to collection time, especially in `--all` mode. Use the timestamps to calculate it.
+* Locations and orientations are entered manually; the tool does not obtain GPS coordinates or generate maps.
