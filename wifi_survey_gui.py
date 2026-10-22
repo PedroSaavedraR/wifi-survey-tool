@@ -156,7 +156,7 @@ class SurveyApp:
             height=5,
         )
         headings = {
-            "bssid": ("BSSID hash", 105),
+            "bssid": ("BSSID / MAC", 135),
             "ssid": ("SSID", 145),
             "detections": ("Detecciones", 85),
             "connected": ("Con conexión", 90),
@@ -339,7 +339,7 @@ class SurveyApp:
         )
         for network in point["networks"]:
             values = (
-                network["bssid_hash"],
+                network["bssid"],
                 network["ssid"],
                 network["detections"],
                 network["connected_captures"],

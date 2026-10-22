@@ -62,19 +62,19 @@ def load_map_measurements(data_dir, plan_id):
                     point["scan_errors"] += 1
 
                 active = record.get("active_interface") or {}
-                active_hash = active.get("bssid_hash")
-                connected_hash = (
-                    active_hash
+                active_bssid = active.get("bssid") or active.get("bssid_hash")
+                connected_bssid = (
+                    active_bssid
                     if active.get("status") == "connected"
                     else None
                 )
                 current_capture = {}
                 for network in record.get("visible_networks") or []:
                     for access_point in network.get("bssids") or []:
-                        bssid_hash = access_point.get("bssid_hash")
-                        if not bssid_hash:
+                        bssid = access_point.get("bssid") or access_point.get("bssid_hash")
+                        if not bssid:
                             continue
-                        entry = current_capture.setdefault(bssid_hash, {
+                        entry = current_capture.setdefault(bssid, {
                             "ssid": network.get("ssid"),
                             "signal_percent": access_point.get("signal_percent"),
                             "channel": access_point.get("channel"),
@@ -83,17 +83,17 @@ def load_map_measurements(data_dir, plan_id):
                         if not entry.get("ssid") and network.get("ssid"):
                             entry["ssid"] = network["ssid"]
 
-                if connected_hash and connected_hash not in current_capture:
-                    current_capture[connected_hash] = {
+                if connected_bssid and connected_bssid not in current_capture:
+                    current_capture[connected_bssid] = {
                         "ssid": active.get("ssid"),
                         "signal_percent": active.get("signal_percent"),
                         "channel": active.get("channel"),
                         "radio_type": active.get("radio_type"),
                     }
 
-                for bssid_hash, observed in current_capture.items():
-                    network = point["networks"].setdefault(bssid_hash, {
-                        "bssid_hash": bssid_hash,
+                for bssid, observed in current_capture.items():
+                    network = point["networks"].setdefault(bssid, {
+                        "bssid": bssid,
                         "ssids": set(),
                         "detections": 0,
                         "connected_captures": 0,
@@ -108,7 +108,7 @@ def load_map_measurements(data_dir, plan_id):
                     network["detections"] += 1
                     if observed.get("ssid"):
                         network["ssids"].add(observed["ssid"])
-                    if bssid_hash == connected_hash:
+                    if bssid == connected_bssid:
                         network["connected_captures"] += 1
                         for key, field in (
                             ("rssi_dbm", "rssi_dbm_values"),
@@ -148,7 +148,7 @@ def load_map_measurements(data_dir, plan_id):
             summaries.append(network)
         point["networks"] = sorted(
             summaries,
-            key=lambda network: (-network["detections"], network["bssid_hash"]),
+            key=lambda network: (-network["detections"], network["bssid"]),
         )
     return points
 

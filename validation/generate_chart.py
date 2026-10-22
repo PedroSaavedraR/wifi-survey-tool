@@ -16,18 +16,18 @@ def plot_all_networks(records, output_image, ssid_filter=None, bssid_filter=None
                 continue
             matching_ssid_found = True
             for access_point in network.get("bssids", []):
-                bssid_hash = access_point.get("bssid_hash")
+                bssid = access_point.get("bssid") or access_point.get("bssid_hash")
                 signal = access_point.get("signal_percent")
-                if bssid_filter is not None and bssid_hash != bssid_filter:
+                if bssid_filter is not None and bssid != bssid_filter:
                     continue
-                if bssid_hash and signal is not None:
-                    signal_by_bssid.setdefault(bssid_hash, {})[sample] = signal
+                if bssid and signal is not None:
+                    signal_by_bssid.setdefault(bssid, {})[sample] = signal
 
     if not matching_ssid_found:
         print(f"Error: SSID '{ssid_filter}' was not found in the all-networks data.")
         return
     if bssid_filter is not None and bssid_filter not in signal_by_bssid:
-        print(f"Error: BSSID hash '{bssid_filter}' has no signal values in the selected data.")
+        print(f"Error: BSSID '{bssid_filter}' has no signal values in the selected data.")
         return
 
     if not signal_by_bssid:
@@ -35,14 +35,14 @@ def plot_all_networks(records, output_image, ssid_filter=None, bssid_filter=None
         return
 
     fig, ax = plt.subplots(figsize=(14, 7.5))
-    for bssid_hash, values in sorted(signal_by_bssid.items()):
+    for bssid, values in sorted(signal_by_bssid.items()):
         ax.plot(
             samples,
             [values.get(sample) for sample in samples],
             marker=".",
             linewidth=1.2,
             markersize=4,
-            label=bssid_hash,
+            label=bssid,
         )
 
     previous_room = None
@@ -54,7 +54,7 @@ def plot_all_networks(records, output_image, ssid_filter=None, bssid_filter=None
             previous_room = room
 
     if bssid_filter:
-        title = f"Signal Strength for BSSID hash: {bssid_filter}"
+        title = f"Signal Strength for BSSID: {bssid_filter}"
     elif ssid_filter:
         title = f"Signal Strength for SSID: {ssid_filter}"
     else:
@@ -65,7 +65,7 @@ def plot_all_networks(records, output_image, ssid_filter=None, bssid_filter=None
     ax.set_ylim(0, 100)
     ax.set_xlim(1, len(records))
     ax.grid(True, linestyle="--", alpha=0.45)
-    ax.legend(title="BSSID hash", loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=7)
+    ax.legend(title="BSSID", loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=7)
     fig.tight_layout(rect=(0, 0, 0.82, 1))
 
     os.makedirs(os.path.dirname(output_image), exist_ok=True)
@@ -82,7 +82,12 @@ def main():
         help="Plot every detected access point from screenshots_all.jsonl",
     )
     parser.add_argument("--ssid", help="Filter the --all chart to this exact SSID")
-    parser.add_argument("--bssid-hash", help="Filter the --all chart to this exact pseudonymized BSSID")
+    parser.add_argument(
+        "--bssid",
+        "--bssid-hash",
+        dest="bssid",
+        help="Filter the --all chart to this exact BSSID (MAC address)",
+    )
     parser.add_argument(
         "--data-dir",
         default="data",
@@ -90,12 +95,12 @@ def main():
     )
     args = parser.parse_args()
 
-    if (args.ssid or args.bssid_hash) and not args.include_all_networks:
-        parser.error("--ssid and --bssid-hash require --all")
+    if (args.ssid or args.bssid) and not args.include_all_networks:
+        parser.error("--ssid and --bssid require --all")
 
     data_filename = "screenshots_all.jsonl" if args.include_all_networks else "screenshots.jsonl"
-    if args.include_all_networks and (args.ssid or args.bssid_hash):
-        filter_name = args.bssid_hash or args.ssid
+    if args.include_all_networks and (args.ssid or args.bssid):
+        filter_name = args.bssid or args.ssid
         filter_slug = re.sub(r"[^A-Za-z0-9_-]+", "_", filter_name).strip("_") or "network"
         image_filename = f"validation_chart_all_{filter_slug}.png"
     else:
@@ -122,7 +127,7 @@ def main():
         return
 
     if args.include_all_networks:
-        plot_all_networks(records, output_image, args.ssid, args.bssid_hash)
+        plot_all_networks(records, output_image, args.ssid, args.bssid)
         return
 
     indices = []

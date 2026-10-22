@@ -1,7 +1,6 @@
 import argparse
 import datetime
 import ctypes
-import hashlib
 import json
 import math
 import os
@@ -99,12 +98,6 @@ def effective_interval(interval, include_all_networks):
         return 5
     return interval
 
-def hash_bssid(bssid_str):
-    """Anonymizes BSSID using SHA-256 prefix for privacy while preserving tracking consistency."""
-    if not bssid_str:
-        return None
-    return hashlib.sha256(bssid_str.strip().encode()).hexdigest()[:12]
-
 def run_cmd(cmd):
     try:
         # netsh returns UTF-8 output on the tested Windows installation.
@@ -128,7 +121,7 @@ def get_active_connection():
     info = {
         "status": "disconnected",
         "ssid": None,
-        "bssid_hash": None,
+        "bssid": None,
         "signal_percent": None,
         "rssi_dbm": None,
         "channel": None,
@@ -157,7 +150,7 @@ def get_active_connection():
 
         # AP BSSID o BSSID
         elif "bssid" in key_lower:
-            info["bssid_hash"] = hash_bssid(val)
+            info["bssid"] = val.strip()
 
         # Señal en %
         elif ("se" in key_lower and "al" in key_lower) or "signal" in key_lower:
@@ -309,7 +302,7 @@ def get_visible_networks():
         elif line.startswith("BSSID ") and current_net is not None:
             bssid_val = line.split(":", 1)[1].strip()
             current_net["bssids"].append({
-                "bssid_hash": hash_bssid(bssid_val),
+                "bssid": bssid_val,
                 "signal_percent": None,
                 "channel": None,
                 "radio_type": None
@@ -336,7 +329,7 @@ def connected_network_from_active(active_info):
         "ssid": ssid,
         "source": "active_interface",
         "bssids": [{
-            "bssid_hash": active_info.get("bssid_hash"),
+            "bssid": active_info.get("bssid"),
             "signal_percent": active_info.get("signal_percent"),
             "channel": active_info.get("channel"),
             "radio_type": active_info.get("radio_type"),
@@ -362,7 +355,7 @@ def acquire_network_observation(include_all_networks, active_info):
 
 def print_visible_networks(networks, active_info):
     print(f"Networks included in capture: {len(networks)}")
-    active_bssid = active_info.get("bssid_hash")
+    active_bssid = active_info.get("bssid")
 
     if not networks:
         print("  No networks included in this capture.")
@@ -373,7 +366,7 @@ def print_visible_networks(networks, active_info):
         for access_point in network.get("bssids", []):
             is_connected = (
                 network.get("source") == "active_interface"
-                or (access_point.get("bssid_hash") == active_bssid and active_bssid is not None)
+                or (access_point.get("bssid") == active_bssid and active_bssid is not None)
             )
             status = "connected AP" if is_connected else "other AP"
             signal = access_point.get("signal_percent")
@@ -381,9 +374,9 @@ def print_visible_networks(networks, active_info):
             radio_type = access_point.get("radio_type") or "n/a"
             signal_text = f"{signal}%" if signal is not None else "n/a"
             channel_text = channel if channel is not None else "n/a"
-            bssid_hash = access_point.get("bssid_hash") or "n/a"
+            bssid = access_point.get("bssid") or "n/a"
             print(
-                f"    {status} | BSSID hash: {bssid_hash} | Signal: {signal_text} "
+                f"    {status} | BSSID: {bssid} | Signal: {signal_text} "
                 f"| Channel: {channel_text} | Radio: {radio_type}"
             )
 

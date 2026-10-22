@@ -57,7 +57,7 @@ El recolector carga `config.json` al iniciarse. En la configuración de ejemplo 
 * `default_samples`: número de capturas por ejecución.
 * `measurement_procedure` y `measurement_incidents`: procedimiento e incidencias opcionales que se copian a las capturas de una ejecución.
 * `coordinate_reference`: identificador del plano, imagen local, referencia de ejes y unidades. Para coordenadas en píxeles se recomienda origen arriba a la izquierda, eje X hacia la derecha y eje Y hacia abajo.
-* `access_points`: posiciones medidas manualmente de los AP que se quieran analizar. Cada elemento usa `bssid_hash`, `x`, `y`, `units` y, opcionalmente, `plan_id`, `label` y `meters_per_unit`. No se deben usar coordenadas de un plano distinto.
+* `access_points`: posiciones medidas manualmente de los AP que se quieran analizar. Cada elemento usa `bssid` (dirección MAC), `x`, `y`, `units` y, opcionalmente, `plan_id`, `label` y `meters_per_unit`. No se deben usar coordenadas de un plano distinto.
 
 Las opciones `--room`, `--orientation`, `--interval` y `--samples` permiten indicar esos valores para una ejecución concreta. Para localizar las capturas, use `--point-id`, `--x` y `--y`; las dos coordenadas deben indicarse juntas y usan las unidades de `coordinate_reference`. `--procedure` documenta el procedimiento de la ejecución y `--incident` (repetible) anota incidencias. El intervalo representa la espera solicitada entre capturas, no garantiza por sí solo el tiempo real entre marcas temporales.
 
@@ -125,8 +125,8 @@ Los registros actuales contienen los siguientes campos principales:
 * `metadata.session_id` y `metadata.sample_index`: identifican la ejecución y el orden de cada captura.
 * `metadata.measurement_procedure` y `metadata.measurement_incidents`: procedimiento e incidencias opcionales.
 * `metadata.position`: `point_id`, `plan_id`, plano, origen, ejes, sistema de coordenadas, unidades, incertidumbre, calibración y, si se indicó, coordenadas `x` e `y`. Las capturas antiguas no tienen este campo.
-* `active_interface`: estado, SSID, BSSID seudonimizado, señal porcentual, RSSI en dBm, canal, banda, tipo de radio y tasas de recepción y transmisión cuando Windows las proporciona. Si falla la consulta de la interfaz, puede contener `error` en lugar de estos campos.
-* `visible_networks`: SSID detectados y sus BSSID seudonimizados, señal porcentual, canal y tipo de radio. En el modo predeterminado contiene el punto de acceso activo; con `--all` contiene las redes visibles del escaneo.
+* `active_interface`: estado, SSID, BSSID/MAC, señal porcentual, RSSI en dBm, canal, banda, tipo de radio y tasas de recepción y transmisión cuando Windows las proporciona. Si falla la consulta de la interfaz, puede contener `error` en lugar de estos campos.
+* `visible_networks`: SSID detectados y sus BSSID/MAC, señal porcentual, canal y tipo de radio. En el modo predeterminado contiene el punto de acceso activo; con `--all` contiene las redes visibles del escaneo.
 * `network_scan`: estado del escaneo solicitado en modo `--all` y, si se produce un error, su mensaje.
 
 `network_scan.status` puede tomar estos valores:
@@ -135,7 +135,7 @@ Los registros actuales contienen los siguientes campos principales:
 * `success`: el escaneo y la consulta terminaron correctamente. Una lista `visible_networks` vacía significa que no se detectaron redes.
 * `error`: Windows no pudo iniciar el escaneo o falló la consulta de redes. El mensaje queda en `network_scan.message`; la lista vacía no debe interpretarse como una medida válida sin redes.
 
-Los valores no disponibles se omiten del JSON, no se sustituyen por cero. `signal_percent` es una estimación porcentual de Windows, no una medida en dBm. El RSSI en dBm corresponde a la conexión activa. Los BSSID se guardan como el prefijo de 12 caracteres hexadecimales de un hash SHA-256 para poder distinguir puntos de acceso entre capturas. Los SSID se conservan tal como los informa Windows.
+Los valores no disponibles se omiten del JSON, no se sustituyen por cero. `signal_percent` es una estimación porcentual de Windows, no una medida en dBm. El RSSI en dBm corresponde a la conexión activa. Los BSSID se guardan como direcciones MAC sin hash para poder asociarlos directamente a puntos de acceso medidos en el plano. Los SSID se conservan tal como los informa Windows. Las capturas antiguas con el campo `bssid_hash` siguen leyéndose en los análisis, pero no se pueden asociar automáticamente con las MAC nuevas.
 
 Las muestras históricas pueden no incluir todas las claves del esquema actual. En los datos revisados el 4 de octubre de 2026, los 59 registros de `screenshots.jsonl` son anteriores a la incorporación de `network_scope` y `network_scan`. Los 10 registros iniciales de `screenshots_all.jsonl` incluyen `network_scope`, pero son anteriores a `network_scan`. Los registros nuevos incluyen ambos campos.
 
@@ -151,14 +151,14 @@ python -m pip install jupyter matplotlib
 
 Abre el Notebook desde Jupyter iniciado en la carpeta del proyecto. Lee automáticamente `data/practica2/screenshots.jsonl` y `data/practica2/screenshots_all.jsonl`; no necesita acceder a la red WiFi. Los planos originales de Moodle (`FIC - P0.png` a `FIC - P4.png`) se seleccionan desde la interfaz y se conservan localmente.
 
-Antes de ejecutarlo, complete en el `config.json` local `coordinate_reference` con el plano, origen, ejes, unidades y, solo si se ha calibrado, `meters_per_unit`. Añada a `access_points` la posición medida de cada AP usando su `bssid_hash` de las capturas. Mantenga el archivo del plano local en la ruta configurada. En el Notebook se pueden fijar `TARGET_POINT_ID` y `TARGET_BSSID_HASH`; si quedan a `None`, se seleccionan los más representados en los datos.
+Antes de ejecutarlo, complete en el `config.json` local `coordinate_reference` con el plano, origen, ejes, unidades y, solo si se ha calibrado, `meters_per_unit`. Añada a `access_points` la posición medida de cada AP usando su `bssid` (dirección MAC) de las capturas. Mantenga el archivo del plano local en la ruta configurada. En el Notebook se pueden fijar `TARGET_POINT_ID` y `TARGET_BSSID`; si quedan a `None`, se seleccionan los más representados en los datos.
 
 Ejemplo de entrada para un AP (sustituya los valores por los medidos; las coordenadas de ejemplo no son datos reales):
 
 ```json
 {
   "label": "AP1",
-  "bssid_hash": "hash_de_12_caracteres",
+  "bssid": "00:11:22:33:44:55",
   "plan_id": "example-plan",
   "x": 500,
   "y": 300,
@@ -180,10 +180,10 @@ Para representar la señal porcentual de todos los BSSID del archivo `--all`, ej
 python validation/generate_chart.py --all
 ```
 
-Para ver las capturas de la práctica 2 en una gráfica y centrarla en un AP concreto, use su `bssid_hash` (puede consultarlo en `data/practica2/screenshots_all.jsonl`):
+Para ver las capturas de la práctica 2 en una gráfica y centrarla en un AP concreto, use su `bssid` (dirección MAC; puede consultarla en `data/practica2/screenshots_all.jsonl`):
 
 ```cmd
-python validation/generate_chart.py --all --data-dir data/practica2 --bssid-hash HASH_DEL_BSSID
+python validation/generate_chart.py --all --data-dir data/practica2 --bssid 00:11:22:33:44:55
 ```
 
 La gráfica muestra la señal porcentual de ese BSSID frente al índice de captura. Para filtrar por SSID en lugar de por BSSID:

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from validation.practica2_analysis import (
     build_observations,
@@ -14,7 +15,12 @@ from validation.practica2_analysis import (
     summarize_signal_methods,
 )
 from validation.map_measurements import load_map_measurements
-from wifi_scanner import measurement_position, output_path_for_mode
+from wifi_scanner import (
+    get_active_connection,
+    get_visible_networks,
+    measurement_position,
+    output_path_for_mode,
+)
 
 
 class PracticeTwoAnalysisTests(unittest.TestCase):
@@ -68,6 +74,7 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
         self.assertEqual(first["signal_percent"], 70)
         self.assertIsNone(second["x"])
         self.assertEqual(second["signal_percent"], 0)
+        self.assertEqual(first["bssid"], "ap-hash")
 
     def test_summary_counts_connections_and_does_not_drop_zero(self):
         summary = summarize_access_points(self.observations, "P1")
@@ -118,6 +125,64 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
         )
         self.assertEqual(distances[0]["distance"], 0.5)
         self.assertEqual(distances[0]["distance_units"], "m")
+
+    def test_raw_bssid_matches_configured_access_point_position(self):
+        bssid = "AA:BB:CC:DD:EE:FF"
+        observations = build_observations([{
+            "metadata": {
+                "position": {
+                    "point_id": "P1",
+                    "plan_id": "floor-1",
+                    "units": "px",
+                    "x": 3,
+                    "y": 4,
+                },
+            },
+            "active_interface": {
+                "status": "connected",
+                "bssid": bssid,
+                "rssi_dbm": -60,
+            },
+            "visible_networks": [{
+                "ssid": "test-network",
+                "bssids": [{"bssid": bssid, "signal_percent": 70}],
+            }],
+        }])
+
+        self.assertEqual(observations[0]["bssid"], bssid)
+        distances = observations_with_distances(
+            observations,
+            [{
+                "bssid": bssid,
+                "plan_id": "floor-1",
+                "x": 0,
+                "y": 0,
+                "units": "px",
+            }],
+            bssid,
+        )
+        self.assertEqual(distances[0]["distance"], 5)
+
+    def test_scanner_stores_unhashed_bssid_mac_addresses(self):
+        with patch(
+            "wifi_scanner.run_cmd",
+            return_value="State : connected\nSSID : test-network\nBSSID : AA:BB:CC:DD:EE:FF\n",
+        ):
+            active = get_active_connection()
+        self.assertEqual(active["bssid"], "AA:BB:CC:DD:EE:FF")
+        self.assertNotIn("bssid_hash", active)
+
+        with patch(
+            "wifi_scanner.run_cmd",
+            return_value=(
+                "SSID 1 : test-network\n"
+                "    BSSID 1 : AA:BB:CC:DD:EE:FF\n"
+                "    Signal : 70%\n"
+            ),
+        ):
+            networks = get_visible_networks()
+        self.assertEqual(networks[0]["bssids"][0]["bssid"], "AA:BB:CC:DD:EE:FF")
+        self.assertNotIn("bssid_hash", networks[0]["bssids"][0])
 
     def test_signal_summary_compares_dbm_and_linear_power_methods(self):
         summary = summarize_signal_methods(self.observations, "P1", "ap-hash")
@@ -194,7 +259,7 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
                 },
                 "active_interface": {
                     "status": "connected",
-                    "bssid_hash": "connected-ap",
+                    "bssid": "AA:BB:CC:DD:EE:FF",
                     "ssid": "connected-network",
                     "signal_percent": 80,
                     "rssi_dbm": -60,
@@ -205,11 +270,11 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
                 },
                 "visible_networks": [
                     {"ssid": "connected-network", "bssids": [
-                        {"bssid_hash": "connected-ap", "signal_percent": 80, "channel": 36},
-                        {"bssid_hash": "connected-ap", "signal_percent": 80, "channel": 36},
+                        {"bssid": "AA:BB:CC:DD:EE:FF", "signal_percent": 80, "channel": 36},
+                        {"bssid": "AA:BB:CC:DD:EE:FF", "signal_percent": 80, "channel": 36},
                     ]},
                     {"ssid": "neighbor-network", "bssids": [
-                        {"bssid_hash": "neighbor-ap", "signal_percent": 40, "channel": 1},
+                        {"bssid": "11:22:33:44:55:66", "signal_percent": 40, "channel": 1},
                     ]},
                 ],
             },
@@ -220,7 +285,7 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
                 },
                 "active_interface": {
                     "status": "connected",
-                    "bssid_hash": "connected-ap",
+                    "bssid": "AA:BB:CC:DD:EE:FF",
                     "ssid": "connected-network",
                     "signal_percent": 70,
                     "rssi_dbm": -66,
@@ -229,7 +294,7 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
                 },
                 "visible_networks": [
                     {"ssid": "connected-network", "bssids": [
-                        {"bssid_hash": "connected-ap", "signal_percent": 70},
+                        {"bssid": "AA:BB:CC:DD:EE:FF", "signal_percent": 70},
                     ]},
                 ],
             },
@@ -247,17 +312,38 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
         self.assertEqual(point["sessions"], 1)
         self.assertEqual(point["point_ids"], ["P3-A"])
         connected, neighbor = point["networks"]
-        self.assertEqual(connected["bssid_hash"], "connected-ap")
+        self.assertEqual(connected["bssid"], "AA:BB:CC:DD:EE:FF")
         self.assertEqual(connected["detections"], 2)
         self.assertEqual(connected["connected_captures"], 2)
         self.assertEqual(connected["mean_signal_percent"], 75)
         self.assertEqual(connected["mean_rssi_dbm"], -63)
         self.assertEqual(connected["mean_rx_rate_mbps"], 250)
         self.assertEqual(connected["mean_tx_rate_mbps"], 122)
-        self.assertEqual(neighbor["bssid_hash"], "neighbor-ap")
+        self.assertEqual(neighbor["bssid"], "11:22:33:44:55:66")
         self.assertEqual(neighbor["mean_signal_percent"], 40)
         self.assertIsNone(neighbor["mean_rx_rate_mbps"])
         self.assertEqual(load_map_measurements(temporary_directory, "FIC-P2"), {})
+
+    def test_map_measurements_still_reads_historical_hashed_bssid_fields(self):
+        record = {
+            "metadata": {
+                "position": {"plan_id": "FIC-P3", "x": 10, "y": 20},
+            },
+            "active_interface": {
+                "status": "connected",
+                "bssid_hash": "legacy-ap-hash",
+            },
+            "visible_networks": [{
+                "ssid": "legacy-network",
+                "bssids": [{"bssid_hash": "legacy-ap-hash", "signal_percent": 60}],
+            }],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            capture_file = Path(temporary_directory) / "screenshots.jsonl"
+            capture_file.write_text(json.dumps(record) + "\n", encoding="utf-8")
+            points = load_map_measurements(temporary_directory, "FIC-P3")
+
+        self.assertEqual(points[(10, 20)]["networks"][0]["bssid"], "legacy-ap-hash")
 
 
 if __name__ == "__main__":

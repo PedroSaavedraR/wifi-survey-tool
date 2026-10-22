@@ -57,7 +57,7 @@ The collector loads `config.json` at startup. The example configuration uses the
 * `default_samples`: number of captures per run.
 * `measurement_procedure` and `measurement_incidents`: optional procedure and incident notes copied into captures for a run.
 * `coordinate_reference`: plan identifier, local image, axis reference, and units. For pixel coordinates, the recommended convention is top-left origin, X to the right, and Y down.
-* `access_points`: manually surveyed positions for APs to analyze. Each entry uses `bssid_hash`, `x`, `y`, and `units`, with optional `plan_id`, `label`, and `meters_per_unit`. Do not use coordinates from a different plan.
+* `access_points`: manually surveyed positions for APs to analyze. Each entry uses `bssid` (MAC address), `x`, `y`, and `units`, with optional `plan_id`, `label`, and `meters_per_unit`. Do not use coordinates from a different plan.
 
 The `--room`, `--orientation`, `--interval`, and `--samples` options let you set these values for an individual run. Use `--point-id`, `--x`, and `--y` to locate captures; both coordinates must be supplied together and use the `coordinate_reference` units. `--procedure` records the run's procedure, and repeatable `--incident` options record incidents. The interval is the requested wait between captures; it does not by itself guarantee the actual time between timestamps.
 
@@ -125,8 +125,8 @@ Current records contain these main fields:
 * `metadata.session_id` and `metadata.sample_index`: identify the run and the order of each capture.
 * `metadata.measurement_procedure` and `metadata.measurement_incidents`: optional procedure and incident notes.
 * `metadata.position`: `point_id`, `plan_id`, plan image, origin, axes, coordinate system, units, uncertainty, calibration, and, when supplied, `x` and `y` coordinates. Historical captures do not have this field.
-* `active_interface`: connection status, SSID, pseudonymized BSSID, signal percentage, RSSI in dBm, channel, band, radio type, and receive and transmit rates when provided by Windows. If querying the interface fails, this field may contain `error` instead.
-* `visible_networks`: detected SSIDs and their pseudonymized BSSIDs, signal percentage, channel, and radio type. In the default mode, this contains the active access point; with `--all`, it contains the visible networks from the scan.
+* `active_interface`: connection status, SSID, BSSID/MAC address, signal percentage, RSSI in dBm, channel, band, radio type, and receive and transmit rates when provided by Windows. If querying the interface fails, this field may contain `error` instead.
+* `visible_networks`: detected SSIDs and their BSSID/MAC addresses, signal percentage, channel, and radio type. In the default mode, this contains the active access point; with `--all`, it contains the visible networks from the scan.
 * `network_scan`: status of the scan requested in `--all` mode and, if an error occurs, its message.
 
 `network_scan.status` can have these values:
@@ -135,7 +135,7 @@ Current records contain these main fields:
 * `success`: the scan and query completed successfully. An empty `visible_networks` list means no networks were detected.
 * `error`: Windows could not start the scan or the network query failed. The message is saved in `network_scan.message`; the empty list must not be interpreted as a valid measurement showing no networks.
 
-Unavailable values are omitted from the JSON, not replaced with zero. `signal_percent` is a Windows percentage estimate, not a measurement in dBm. RSSI in dBm is for the active connection. BSSIDs are stored as the first 12 hexadecimal characters of a SHA-256 hash so access points can be distinguished between captures. SSIDs are retained as reported by Windows.
+Unavailable values are omitted from the JSON, not replaced with zero. `signal_percent` is a Windows percentage estimate, not a measurement in dBm. RSSI in dBm is for the active connection. BSSIDs are stored as their unhashed MAC addresses so they can be matched directly to access points surveyed on the floor plan. SSIDs are retained as reported by Windows. Historical captures with a `bssid_hash` field remain readable in analyses, but cannot be automatically matched to new MAC addresses.
 
 Historical samples may not include every key in the current schema. In the data reviewed on October 4, 2026, all 59 records in `screenshots.jsonl` predate the addition of `network_scope` and `network_scan`. The initial 10 records in `screenshots_all.jsonl` include `network_scope`, but predate `network_scan`. New records include both fields.
 
@@ -151,14 +151,14 @@ python -m pip install jupyter matplotlib
 
 Open the notebook from Jupyter started in the project folder. It automatically reads `data/practica2/screenshots.jsonl` and `data/practica2/screenshots_all.jsonl`; it does not query the WiFi network. Original Moodle floor plans (`FIC - P0.png` to `FIC - P4.png`) are selected in the GUI and kept locally.
 
-Before running it, complete `coordinate_reference` in the local `config.json` with the plan, origin, axes, units, and `meters_per_unit` only if the plan has been calibrated. Add each AP's surveyed position to `access_points` using its capture `bssid_hash`. Keep the plan image at the configured local path. Set `TARGET_POINT_ID` and `TARGET_BSSID_HASH` in the notebook to choose the analysis; when left as `None`, the most represented point and AP are selected.
+Before running it, complete `coordinate_reference` in the local `config.json` with the plan, origin, axes, units, and `meters_per_unit` only if the plan has been calibrated. Add each AP's surveyed position to `access_points` using its capture `bssid` MAC address. Keep the plan image at the configured local path. Set `TARGET_POINT_ID` and `TARGET_BSSID` in the notebook to choose the analysis; when left as `None`, the most represented point and AP are selected.
 
 Example AP entry (replace these values with surveyed data; the coordinates are illustrative, not real measurements):
 
 ```json
 {
   "label": "AP1",
-  "bssid_hash": "12-character-hash",
+  "bssid": "00:11:22:33:44:55",
   "plan_id": "example-plan",
   "x": 500,
   "y": 300,
@@ -180,10 +180,10 @@ To chart the signal percentage for all BSSIDs in the `--all` file, run:
 python validation/generate_chart.py --all
 ```
 
-To chart Practice 2 captures and focus on one AP, use its `bssid_hash` (available in `data/practica2/screenshots_all.jsonl`):
+To chart Practice 2 captures and focus on one AP, use its `bssid` MAC address (available in `data/practica2/screenshots_all.jsonl`):
 
 ```cmd
-python validation/generate_chart.py --all --data-dir data/practica2 --bssid-hash BSSID_HASH
+python validation/generate_chart.py --all --data-dir data/practica2 --bssid 00:11:22:33:44:55
 ```
 
 The chart shows that BSSID's signal percentage by capture index. To filter by SSID instead:

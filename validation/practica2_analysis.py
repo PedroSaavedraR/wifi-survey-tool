@@ -39,16 +39,16 @@ def build_observations(records):
         active = record.get("active_interface") or {}
         visible_networks = record.get("visible_networks") or []
         timestamp = metadata.get("timestamp_utc")
-        active_bssid = active.get("bssid_hash")
+        active_bssid = active.get("bssid") or active.get("bssid_hash")
         found_active_bssid = False
 
         for network in visible_networks:
             for access_point in network.get("bssids") or []:
-                bssid_hash = access_point.get("bssid_hash")
-                if not bssid_hash:
+                bssid = access_point.get("bssid") or access_point.get("bssid_hash")
+                if not bssid:
                     continue
                 connected = (
-                    bssid_hash == active_bssid
+                    bssid == active_bssid
                     and active.get("status") == "connected"
                 )
                 found_active_bssid = found_active_bssid or connected
@@ -77,7 +77,7 @@ def build_observations(records):
                     "x": _finite_number(position.get("x")),
                     "y": _finite_number(position.get("y")),
                     "ssid": network.get("ssid"),
-                    "bssid_hash": bssid_hash,
+                    "bssid": bssid,
                     "signal_percent": _finite_number(access_point.get("signal_percent")),
                     "rssi_dbm": _finite_number(active.get("rssi_dbm")) if connected else None,
                     "connected": connected,
@@ -109,7 +109,7 @@ def build_observations(records):
                 "x": _finite_number(position.get("x")),
                 "y": _finite_number(position.get("y")),
                 "ssid": active.get("ssid"),
-                "bssid_hash": active_bssid,
+                "bssid": active_bssid,
                 "signal_percent": _finite_number(active.get("signal_percent")),
                 "rssi_dbm": _finite_number(active.get("rssi_dbm")),
                 "connected": True,
@@ -117,8 +117,8 @@ def build_observations(records):
     return observations
 
 
-def select_signal_metric(observations, bssid_hash):
-    selected = [row for row in observations if row["bssid_hash"] == bssid_hash]
+def select_signal_metric(observations, bssid):
+    selected = [row for row in observations if row["bssid"] == bssid]
     if any(row["rssi_dbm"] is not None for row in selected):
         return "rssi_dbm", "dBm"
     if any(row["signal_percent"] is not None for row in selected):
@@ -131,8 +131,8 @@ def summarize_access_points(observations, point_id):
     for row in observations:
         if row["point_id"] != point_id:
             continue
-        group = groups.setdefault(row["bssid_hash"], {
-            "bssid_hash": row["bssid_hash"],
+        group = groups.setdefault(row["bssid"], {
+            "bssid": row["bssid"],
             "ssids": [],
             "detections": 0,
             "connected_captures": 0,
@@ -160,15 +160,15 @@ def summarize_access_points(observations, point_id):
         group["max_rssi_dbm"] = max(rssi_values) if rssi_values else None
         group["median_rssi_dbm"] = median(rssi_values) if rssi_values else None
         summaries.append(group)
-    return sorted(summaries, key=lambda item: (-item["detections"], item["bssid_hash"]))
+    return sorted(summaries, key=lambda item: (-item["detections"], item["bssid"]))
 
 
-def summarize_signal_methods(observations, point_id, bssid_hash):
+def summarize_signal_methods(observations, point_id, bssid):
     values = [
         row["rssi_dbm"]
         for row in observations
         if row["point_id"] == point_id
-        and row["bssid_hash"] == bssid_hash
+        and row["bssid"] == bssid
         and row["rssi_dbm"] is not None
     ]
     if not values:
@@ -191,9 +191,9 @@ def summarize_signal_methods(observations, point_id, bssid_hash):
     }
 
 
-def _access_point_by_hash(access_points, bssid_hash):
+def _access_point_by_bssid(access_points, bssid):
     for access_point in access_points:
-        if access_point.get("bssid_hash") == bssid_hash:
+        if access_point.get("bssid") == bssid or access_point.get("bssid_hash") == bssid:
             return access_point
     return None
 
@@ -201,11 +201,11 @@ def _access_point_by_hash(access_points, bssid_hash):
 def observations_with_distances(
     observations,
     access_points,
-    bssid_hash,
+    bssid,
     default_plan_id=None,
     default_meters_per_unit=None,
 ):
-    access_point = _access_point_by_hash(access_points, bssid_hash)
+    access_point = _access_point_by_bssid(access_points, bssid)
     if access_point is None:
         return []
     ap_x = _finite_number(access_point.get("x"))
@@ -217,7 +217,7 @@ def observations_with_distances(
 
     result = []
     for row in observations:
-        if row["bssid_hash"] != bssid_hash or row["x"] is None or row["y"] is None:
+        if row["bssid"] != bssid or row["x"] is None or row["y"] is None:
             continue
         if not row["plan_id"] or row["plan_id"] != ap_plan_id:
             continue
@@ -240,12 +240,12 @@ def observations_with_distances(
     return result
 
 
-def plot_signal_distance(observations, bssid_hash, metric, metric_units, output_path=None):
+def plot_signal_distance(observations, bssid, metric, metric_units, output_path=None):
     import matplotlib.pyplot as plt
 
     rows = [
         row for row in observations
-        if row["bssid_hash"] == bssid_hash
+        if row["bssid"] == bssid
         and row.get("distance") is not None
         and row.get(metric) is not None
     ]
@@ -263,7 +263,7 @@ def plot_signal_distance(observations, bssid_hash, metric, metric_units, output_
     )
     axis.set_xlabel(f"Distance to AP ({distance_units})")
     axis.set_ylabel(f"{metric} ({metric_units})")
-    axis.set_title(f"Observed WiFi signal by distance — AP {bssid_hash}")
+    axis.set_title(f"Observed WiFi signal by distance — AP {bssid}")
     axis.grid(True, linestyle="--", alpha=0.4)
     figure.tight_layout()
     if output_path:
@@ -274,7 +274,7 @@ def plot_signal_distance(observations, bssid_hash, metric, metric_units, output_
 def plot_floorplan(
     observations,
     access_points,
-    bssid_hash,
+    bssid,
     metric,
     metric_units,
     plan_file,
@@ -287,20 +287,20 @@ def plot_floorplan(
     image_path = Path(plan_file)
     if not image_path.is_file():
         raise FileNotFoundError(f"Floor plan image not found: '{image_path}'.")
-    access_point = _access_point_by_hash(access_points, bssid_hash)
+    access_point = _access_point_by_bssid(access_points, bssid)
     if access_point is None:
-        raise ValueError(f"No floor-plan position configured for AP '{bssid_hash}'.")
+        raise ValueError(f"No floor-plan position configured for AP '{bssid}'.")
     ap_x = _finite_number(access_point.get("x"))
     ap_y = _finite_number(access_point.get("y"))
     if ap_x is None or ap_y is None:
-        raise ValueError(f"AP '{bssid_hash}' must have numeric x and y coordinates.")
+        raise ValueError(f"AP '{bssid}' must have numeric x and y coordinates.")
     ap_plan_id = access_point.get("plan_id") or default_plan_id
     ap_units = access_point.get("units")
 
     groups = {}
     for row in observations:
         if (
-            row["bssid_hash"] != bssid_hash
+            row["bssid"] != bssid
             or row["plan_id"] != ap_plan_id
             or (row["units"] and ap_units and row["units"] != ap_units)
             or row["x"] is None
@@ -331,7 +331,7 @@ def plot_floorplan(
             axis.annotate(str(point[0]), (point[1], point[2]), xytext=(5, 5), textcoords="offset points")
     axis.scatter([ap_x], [ap_y], marker="*", c="blue", edgecolors="white", s=230, label="AP")
     figure.colorbar(scatter, ax=axis, label=f"Median {metric} ({metric_units})")
-    axis.set_title(f"Measured positions on plan — AP {bssid_hash}")
+    axis.set_title(f"Measured positions on plan — AP {bssid}")
     axis.set_xlabel("x (plan coordinates)")
     axis.set_ylabel("y (plan coordinates)")
     axis.legend()
