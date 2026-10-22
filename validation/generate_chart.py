@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 import re
 
-def plot_all_networks(records, output_image, ssid_filter=None):
+def plot_all_networks(records, output_image, ssid_filter=None, bssid_filter=None):
     samples = list(range(1, len(records) + 1))
     signal_by_bssid = {}
     matching_ssid_found = ssid_filter is None
@@ -18,11 +18,16 @@ def plot_all_networks(records, output_image, ssid_filter=None):
             for access_point in network.get("bssids", []):
                 bssid_hash = access_point.get("bssid_hash")
                 signal = access_point.get("signal_percent")
+                if bssid_filter is not None and bssid_hash != bssid_filter:
+                    continue
                 if bssid_hash and signal is not None:
                     signal_by_bssid.setdefault(bssid_hash, {})[sample] = signal
 
     if not matching_ssid_found:
         print(f"Error: SSID '{ssid_filter}' was not found in the all-networks data.")
+        return
+    if bssid_filter is not None and bssid_filter not in signal_by_bssid:
+        print(f"Error: BSSID hash '{bssid_filter}' has no signal values in the selected data.")
         return
 
     if not signal_by_bssid:
@@ -48,7 +53,12 @@ def plot_all_networks(records, output_image, ssid_filter=None):
                 ax.axvline(sample, color="#7F8C8D", linestyle=":", linewidth=1)
             previous_room = room
 
-    title = f"Signal Strength for SSID: {ssid_filter}" if ssid_filter else "Signal Strength of All Detected Access Points"
+    if bssid_filter:
+        title = f"Signal Strength for BSSID hash: {bssid_filter}"
+    elif ssid_filter:
+        title = f"Signal Strength for SSID: {ssid_filter}"
+    else:
+        title = "Signal Strength of All Detected Access Points"
     ax.set_title(title)
     ax.set_xlabel("Sample Sequence Index")
     ax.set_ylabel("Signal (%)")
@@ -72,18 +82,25 @@ def main():
         help="Plot every detected access point from screenshots_all.jsonl",
     )
     parser.add_argument("--ssid", help="Filter the --all chart to this exact SSID")
+    parser.add_argument("--bssid-hash", help="Filter the --all chart to this exact pseudonymized BSSID")
+    parser.add_argument(
+        "--data-dir",
+        default="data",
+        help="Directory containing screenshots.jsonl and screenshots_all.jsonl (default: data)",
+    )
     args = parser.parse_args()
 
-    if args.ssid and not args.include_all_networks:
-        parser.error("--ssid requires --all")
+    if (args.ssid or args.bssid_hash) and not args.include_all_networks:
+        parser.error("--ssid and --bssid-hash require --all")
 
     data_filename = "screenshots_all.jsonl" if args.include_all_networks else "screenshots.jsonl"
-    if args.include_all_networks and args.ssid:
-        ssid_slug = re.sub(r"[^A-Za-z0-9_-]+", "_", args.ssid).strip("_") or "network"
-        image_filename = f"validation_chart_all_{ssid_slug}.png"
+    if args.include_all_networks and (args.ssid or args.bssid_hash):
+        filter_name = args.bssid_hash or args.ssid
+        filter_slug = re.sub(r"[^A-Za-z0-9_-]+", "_", filter_name).strip("_") or "network"
+        image_filename = f"validation_chart_all_{filter_slug}.png"
     else:
         image_filename = "validation_chart_all.png" if args.include_all_networks else "validation_chart.png"
-    data_path = os.path.join("data", data_filename)
+    data_path = os.path.join(args.data_dir, data_filename)
     output_dir = "validation"
     output_image = os.path.join(output_dir, image_filename)
 
@@ -105,7 +122,7 @@ def main():
         return
 
     if args.include_all_networks:
-        plot_all_networks(records, output_image, args.ssid)
+        plot_all_networks(records, output_image, args.ssid, args.bssid_hash)
         return
 
     indices = []

@@ -3,15 +3,37 @@ import datetime
 import ctypes
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
 import time
+import uuid
 
 def parse_args():
     parser = argparse.ArgumentParser(description="WiFi Data Acquisition CLI Tool for Windows")
     parser.add_argument("--room", default="Lab-1.1", help="Measurement location or room identifier")
     parser.add_argument("--orientation", default="0-North", help="Device orientation (e.g., 0-North, 180-South)")
+    parser.add_argument("--point-id", help="Stable identifier for the measurement point on the floor plan")
+    parser.add_argument("--x", type=float, help="Horizontal coordinate in the configured plan reference")
+    parser.add_argument("--y", type=float, help="Vertical coordinate in the configured plan reference")
+    parser.add_argument("--building", help="Building identifier for this capture")
+    parser.add_argument("--floor", help="Floor identifier for this capture")
+    parser.add_argument("--plan-id", help="Plan identifier for this capture")
+    parser.add_argument("--map-file", help="Path to the floor-plan image used for coordinates")
+    parser.add_argument("--coordinate-system", help="Coordinate reference identifier")
+    parser.add_argument("--units", help="Coordinate units, such as px")
+    parser.add_argument("--origin", help="Coordinate origin")
+    parser.add_argument("--x-axis", help="Positive direction of the horizontal axis")
+    parser.add_argument("--y-axis", help="Positive direction of the vertical axis")
+    parser.add_argument("--procedure", help="Short description of the measurement procedure")
+    parser.add_argument("--incident", action="append", default=[], help="Record a measurement incident (repeatable)")
+    parser.add_argument(
+        "--dataset",
+        choices=("practica1", "practica2"),
+        default="practica1",
+        help="Dataset destination; the default preserves the Practice 1 data paths",
+    )
     parser.add_argument("--interval", type=int, default=None, help="Cadence between samples in seconds")
     parser.add_argument("--samples", type=int, default=None, help="Total number of samples to collect")
     parser.add_argument(
@@ -22,15 +44,55 @@ def parse_args():
     )
     return parser.parse_args()
 
+def measurement_position(args, config):
+    if (args.x is None) != (args.y is None):
+        raise ValueError("--x and --y must be provided together.")
+
+    reference = config.get("coordinate_reference", {})
+    plan_id = getattr(args, "plan_id", None) or reference.get("plan_id")
+    map_file = getattr(args, "map_file", None) or reference.get("map_file")
+    coordinate_system = getattr(args, "coordinate_system", None) or reference.get("coordinate_system")
+    units = getattr(args, "units", None) or reference.get("units")
+    if args.x is not None and not plan_id:
+        raise ValueError("Provide --plan-id or set coordinate_reference.plan_id in config.json.")
+    if args.x is not None and not units:
+        raise ValueError("Provide --units or set coordinate_reference.units in config.json.")
+    if args.x is not None and not coordinate_system:
+        raise ValueError("Provide --coordinate-system or set coordinate_reference.coordinate_system in config.json.")
+    if args.x is not None and (not math.isfinite(args.x) or not math.isfinite(args.y)):
+        raise ValueError("Coordinates must be finite numbers.")
+
+    position = {
+        "point_id": args.point_id or args.room,
+        "plan_id": plan_id,
+        "map_file": map_file,
+        "building": getattr(args, "building", None) or config.get("building"),
+        "floor": getattr(args, "floor", None) or config.get("floor"),
+        "coordinate_system": coordinate_system,
+        "origin": getattr(args, "origin", None) or reference.get("origin"),
+        "x_axis": getattr(args, "x_axis", None) or reference.get("x_axis"),
+        "y_axis": getattr(args, "y_axis", None) or reference.get("y_axis"),
+        "units": units,
+        "meters_per_unit": reference.get("meters_per_unit"),
+        "x": args.x,
+        "y": args.y,
+        "uncertainty": reference.get("position_uncertainty"),
+    }
+    return {key: value for key, value in position.items() if value is not None}
+
 def load_config():
     if os.path.exists("config.json"):
         with open("config.json", "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
-def output_path_for_mode(include_all_networks):
+def output_path_for_mode(include_all_networks, dataset="practica1"):
     filename = "screenshots_all.jsonl" if include_all_networks else "screenshots.jsonl"
-    return os.path.join("data", filename)
+    if dataset == "practica1":
+        return os.path.join("data", filename)
+    if dataset == "practica2":
+        return os.path.join("data", "practica2", filename)
+    raise ValueError(f"Unsupported dataset: {dataset}")
 
 def effective_interval(interval, include_all_networks):
     if include_all_networks and interval < 5:
@@ -335,6 +397,12 @@ def omit_none_values(value):
 def main():
     args = parse_args()
     config = load_config()
+    try:
+        position = measurement_position(args, config)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+    procedure = args.procedure or config.get("measurement_procedure")
+    incidents = args.incident or config.get("measurement_incidents", [])
 
     interval = args.interval if args.interval is not None else config.get("default_interval", 3)
     requested_interval = interval
@@ -343,13 +411,22 @@ def main():
         print(f"--all requires an interval of at least 5s; using 5s instead of {requested_interval}s.")
     max_samples = args.samples if args.samples is not None else config.get("default_samples", 15)
 
-    os.makedirs("data", exist_ok=True)
-    output_filepath = output_path_for_mode(args.include_all_networks)
+    output_filepath = output_path_for_mode(args.include_all_networks, args.dataset)
+    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
 
     print(f"Starting WiFi acquisition: {max_samples} samples, {interval}s interval.")
     network_mode = "all detected SSIDs" if args.include_all_networks else "connected AP only"
     print(f"Network selection: {network_mode}.")
     print(f"Incremental storage: {output_filepath}")
+
+    session_id = uuid.uuid4().hex
+    if position.get("x") is not None:
+        print(
+            f"Measurement point: {position['point_id']} on {position['plan_id']} "
+            f"at ({position['x']}, {position['y']}) {position.get('units', 'units not set')}."
+        )
+    else:
+        print(f"Measurement point: {position['point_id']} (no plan coordinates supplied).")
 
     samples_count = 0
     try:
@@ -372,10 +449,15 @@ def main():
                     "timestamp_utc": timestamp,
                     "device_id": config.get("device_id", "unknown-device"),
                     "campaign": config.get("default_campaign", "test-campaign"),
-                    "building": config.get("building", "unknown-building"),
-                    "floor": config.get("floor", "unknown-floor"),
+                    "building": args.building or config.get("building", "unknown-building"),
+                    "floor": args.floor or config.get("floor", "unknown-floor"),
                     "room": args.room,
                     "orientation": args.orientation,
+                    "session_id": session_id,
+                    "sample_index": samples_count + 1,
+                    "position": position,
+                    "measurement_procedure": procedure,
+                    "measurement_incidents": incidents,
                     "network_scope": "all_visible" if args.include_all_networks else "connected_ap"
                 },
                 "active_interface": active_info,

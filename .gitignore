@@ -3,6 +3,7 @@
 
 # Capturas con SSID y metadatos de ubicacion/equipo
 /data/*.jsonl
+/data/**/*.jsonl
 
 # Memoria tecnica con informacion de la vivienda y las redes
 /memoria_practica1_redes_moviles.pdf
@@ -11,9 +12,12 @@
 # Graficos y planos generados localmente
 /validation/*.png
 /validation/generate_floorplan.py
+/FIC - P*.png
+/ap_list*.csv
 
 # Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+.ipynb_checkpoints/

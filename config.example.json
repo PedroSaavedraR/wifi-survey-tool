@@ -4,5 +4,19 @@
   "building": "example-building",
   "floor": "Floor_1",
   "default_interval": 3,
-  "default_samples": 10
+  "default_samples": 10,
+  "measurement_procedure": null,
+  "measurement_incidents": [],
+  "coordinate_reference": {
+    "plan_id": "example-plan",
+    "map_file": "path-to-local-floorplan.png",
+    "coordinate_system": "image_pixels_top_left",
+    "origin": "top_left",
+    "x_axis": "right",
+    "y_axis": "down",
+    "units": "px",
+    "position_uncertainty": null,
+    "meters_per_unit": null
+  },
+  "access_points": []
 }
