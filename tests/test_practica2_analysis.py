@@ -14,7 +14,12 @@ from validation.practica2_analysis import (
     summarize_access_points,
     summarize_signal_methods,
 )
-from validation.map_measurements import load_map_measurements
+from validation.map_measurements import (
+    build_router_coverage_models,
+    load_access_point_inventory,
+    load_map_measurements,
+    summarize_router_eduroam_signal,
+)
 from wifi_scanner import (
     get_active_connection,
     get_visible_networks,
@@ -344,6 +349,154 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
             points = load_map_measurements(temporary_directory, "FIC-P3")
 
         self.assertEqual(points[(10, 20)]["networks"][0]["bssid"], "legacy-ap-hash")
+
+    def test_router_signal_uses_best_direct_eduroam_bssid_from_mac_family(self):
+        point = {"networks": [
+            {
+                "bssid": "AA:BB:CC:DD:EE:60",
+                "ssid": "eduroam",
+                "mean_signal_percent": 40,
+                "signal_observation_count": 2,
+            },
+            {
+                "bssid": "aa:bb:cc:dd:ee:70",
+                "ssid": "eduroam",
+                "mean_signal_percent": 65,
+                "signal_observation_count": 3,
+            },
+            {
+                "bssid": "AA:BB:CC:DD:EE:71",
+                "ssid": "other-network",
+                "mean_signal_percent": 100,
+                "signal_observation_count": 4,
+            },
+            {
+                "bssid": "FF:BB:CC:DD:EE:70",
+                "ssid": "eduroam",
+                "mean_signal_percent": 95,
+                "signal_observation_count": 1,
+            },
+            {
+                "bssid": "11:22:33:44:55:60",
+                "ssid": "eduroam",
+                "mean_signal_percent": None,
+                "signal_observation_count": 0,
+            },
+        ]}
+        access_points = [
+            {
+                "name": "router-2.0",
+                "radio_mac": "AA:BB:CC:DD:EE:70",
+                "bssid_prefix": "AA:BB:CC:DD:EE",
+                "x": 10,
+                "y": 20,
+            },
+            {
+                "name": "router-heard-without-level",
+                "radio_mac": "11:22:33:44:55:60",
+                "bssid_prefix": "11:22:33:44:55",
+                "x": 25,
+                "y": 35,
+            },
+            {
+                "name": "router-not-heard",
+                "radio_mac": "22:33:44:55:66:60",
+                "bssid_prefix": "22:33:44:55:66",
+                "x": 30,
+                "y": 40,
+            },
+        ]
+
+        summaries = summarize_router_eduroam_signal(point, access_points)
+
+        self.assertEqual(summaries[0]["mean_signal_percent"], 65)
+        self.assertEqual(summaries[0]["bssid"], "aa:bb:cc:dd:ee:70")
+        self.assertEqual(summaries[0]["signal_observation_count"], 3)
+        self.assertTrue(summaries[0]["detected"])
+        self.assertTrue(summaries[1]["detected"])
+        self.assertIsNone(summaries[1]["mean_signal_percent"])
+        self.assertEqual(summaries[1]["signal_observation_count"], 0)
+        self.assertFalse(summaries[2]["detected"])
+
+    def test_ap_inventory_matches_radio_macs_and_p2_plan_positions(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            inventory_file = Path(temporary_directory) / "ap_list.csv"
+            inventory_file.write_text(
+                "Dispositivo,Dirección MAC de radio,Dirección MAC LAN,Tipo\n"
+                "INFOR-A04-2-06-2116,98:8F:00:39:B4:20,,Aruba AP 655\n"
+                "INFOR-A04-3-05-2117,98:8F:00:39:AB:B0,,Aruba AP 655\n",
+                encoding="utf-8",
+            )
+
+            access_points = load_access_point_inventory(
+                inventory_file,
+                "FIC-P2",
+            )
+
+        self.assertEqual(len(access_points), 1)
+        self.assertEqual(access_points[0]["name"], "INFOR-A04-2-06-2116")
+        self.assertEqual(access_points[0]["bssid_prefix"], "98:8F:00:39:B4")
+        self.assertEqual((access_points[0]["x"], access_points[0]["y"]), (803, 273))
+
+    def test_router_coverage_estimates_concentric_radii_from_signal_by_distance(self):
+        access_point = {
+            "name": "router",
+            "radio_mac": "AA:BB:CC:DD:EE:10",
+            "bssid_prefix": "AA:BB:CC:DD:EE",
+            "x": 0,
+            "y": 0,
+        }
+        values = {
+            (10, 0): 90,
+            (110, 0): 10,
+        }
+        points = {
+            position: {"networks": [{
+                "bssid": f"AA:BB:CC:DD:EE:{index:02X}",
+                "ssid": "eduroam",
+                "mean_signal_percent": signal,
+                "signal_observation_count": 10,
+            }]}
+            for index, (position, signal) in enumerate(values.items(), 16)
+        }
+
+        model = build_router_coverage_models(points, [access_point])[0]
+
+        self.assertTrue(model["supported"])
+        self.assertAlmostEqual(model["slope"], -0.8)
+        self.assertAlmostEqual(model["intercept"], 98)
+        self.assertAlmostEqual(model["radius_70"], 35)
+        self.assertAlmostEqual(model["radius_40"], 72.5)
+        self.assertEqual(model["max_radius"], 110)
+
+    def test_router_coverage_requires_two_distinct_measured_distances(self):
+        access_point = {
+            "name": "router",
+            "radio_mac": "AA:BB:CC:DD:EE:10",
+            "bssid_prefix": "AA:BB:CC:DD:EE",
+            "x": 0,
+            "y": 0,
+        }
+        points = {
+            (100, 0): {"networks": [{
+                "bssid": "AA:BB:CC:DD:EE:10",
+                "ssid": "eduroam",
+                "mean_signal_percent": 80,
+                "signal_observation_count": 1,
+            }]},
+            (0, 100): {"networks": [{
+                "bssid": "AA:BB:CC:DD:EE:10",
+                "ssid": "eduroam",
+                "mean_signal_percent": 60,
+                "signal_observation_count": 1,
+            }]},
+        }
+
+        model = build_router_coverage_models(points, [access_point])[0]
+
+        self.assertFalse(model["supported"])
+        self.assertIsNone(model["radius_70"])
+        self.assertIsNone(model["radius_40"])
 
 
 if __name__ == "__main__":

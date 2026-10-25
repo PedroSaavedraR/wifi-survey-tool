@@ -2,7 +2,7 @@
 
 [English](README.md) | [Español](README.es.md)
 
-A command-line tool for querying and recording the active WiFi connection and, optionally, visible networks. Each capture includes a timestamp and campaign and location labels; optional floor-plan coordinates support repeatable measurements and analysis in the Practice 02 notebook.
+A command-line tool for querying and recording the active WiFi connection and, optionally, visible networks. Each capture includes a timestamp and campaign and location labels; optional floor-plan coordinates support repeatable measurements and analysis with the project's Python tools.
 
 ## 1. Environment and requirements
 
@@ -10,10 +10,10 @@ A command-line tool for querying and recording the active WiFi connection and, o
 * **Test device:** Lenovo LOQ 15 with a MediaTek MT7921 WiFi adapter.
 * **Interpreter:** Python 3.8 or later. The version verified on the test device is Python 3.14.6.
 * **System utilities:** `netsh.exe` and the native Windows WLAN API.
-* **Dependencies:** capture and GUI use libraries included with Python for Windows (including Tkinter). Install Jupyter and `matplotlib` to run the notebook and generate analysis charts:
+* **Dependencies:** capture and GUI use libraries included with Python for Windows (including Tkinter). Install `matplotlib` to generate analysis charts:
 
 ```cmd
-python -m pip install jupyter matplotlib
+python -m pip install matplotlib
 ```
 
 The `--all` option requests a scan through the Windows WLAN API. On the test device, Windows location services had to be enabled and the collector had to be run with administrator privileges to retrieve visible networks. These requirements may vary depending on the Windows version, adapter, and drivers.
@@ -34,17 +34,16 @@ Copy-Item config.example.json config.json
 
 Edit `config.json` with the device and campaign labels. This local file is excluded from Git.
 
-Install Jupyter and `matplotlib` only if you want to run the analysis and generate charts. Project code includes:
+Install `matplotlib` only if you want to generate charts. Project code includes:
 
 * `wifi_scanner.py`: data collection, labeling, and capture storage.
 * `wifi_survey_gui.py`: floor and map-position selection and Practice 2 capture control.
 * `config.example.json`: template without personal identifiers.
 * `validation/generate_chart.py`: chart generation from the data.
-* `validation/analisis_practica2.ipynb`: notebook for Practice 2 capture analysis.
-* `validation/practica2_analysis.py` and `validation/map_measurements.py`: notebook and map-viewer helpers.
+* `validation/practica2_analysis.py` and `validation/map_measurements.py`: analysis functions and map-viewer helpers.
 * `tests/test_practica2_analysis.py`: tests for analysis and dataset paths.
 
-`.gitignore` excludes local configuration, JSONL captures, the technical report, and generated charts. The original floor plans `FIC - P0.png` to `FIC - P4.png` and `ap_list_up_*.csv` are Moodle course materials; they do not need to be copied into the repository. The GUI lets you select a local plan. The collector creates `data/` when it runs.
+`.gitignore` excludes local configuration, JSONL captures, the technical report, and generated charts. The original floor plans `FIC - P0.png` to `FIC - P4.png` and `ap_list_up_*.csv` are Moodle course materials and should not be committed. To match signal readings to router names, keep the `ap_list_up_*.csv` file in the project folder. The GUI lets you select a local plan. The collector creates `data/` when it runs.
 
 ## 3. Configuration
 
@@ -73,9 +72,19 @@ python wifi_survey_gui.py
 
 Select a floor, load its image if it does not appear automatically, and click your position. The image is shown at its original size: the origin is the top-left corner, X increases to the right, Y increases down, and coordinates are stored as pixels in that image. Use the scrollbars to reach any area. Enter the point identifier, orientation, and number of captures, then select **Iniciar capturas** to open the collector in a separate terminal. The GUI writes Practice 2 captures to `data/practica2/screenshots.jsonl`; enabling all-network scans writes to `data/practica2/screenshots_all.jsonl` and requires a minimum interval of 5 seconds. The Practice 1 files `data/screenshots.jsonl` and `data/screenshots_all.jsonl` are not modified. Stop collection with `Ctrl+C` in that terminal.
 
-The interface shows yellow markers for measured positions on the map; the number indicates how many captures were taken there. Click near a marker to view its network table; if it is within 24 pixels, the selection snaps to the nearest measured position. **Recargar datos** only rereads the dataset. To repeat measurements at the same location, select **Medir de nuevo aquí**. To measure a different location, click an empty area of the plan: the interface suggests a new point identifier, which you can edit, then select **Iniciar capturas en posición seleccionada**. The marker and table refresh automatically when capture finishes. If capture is cancelled before a sample is saved, the provisional selection is cleared and no measured point is shown. RSSI and Rx/Tx rates are shown only for the connected AP; Windows does not provide those rates for neighboring networks.
+The interface shows blue diamonds for measured positions; the number indicates how many captures were taken there. Click near a diamond to view its network table; if it is within 24 pixels, the selection snaps to the nearest measured position. **Recargar datos** only rereads the dataset. To repeat measurements at the same location, select **Medir de nuevo aquí**. To measure a different location, click an empty area of the plan: the interface suggests a new point identifier, which you can edit, then select **Iniciar capturas en posición seleccionada**. The marker and table refresh automatically when capture finishes. If capture is cancelled before a sample is saved, the provisional selection is cleared and no measured point is shown. RSSI and Rx/Tx rates are shown only for the connected AP; Windows does not provide those rates for neighboring networks.
 
-The interface records the building, floor, plan identifier and selected plan path with each sample, together with the marked position. The path identifies the image used on this computer; when sharing the project, download the `FIC - P0.png` to `FIC - P4.png` plans from Moodle, select the required image with **Cargar plano...**, and optionally place it beside `wifi_scanner.py` for automatic discovery. The Practice 2 notebook reads JSONL files from `data/practica2/`.
+When you select a measured point, the interface matches detected `eduroam` BSSIDs to radio MAC addresses in `ap_list_up_*.csv` and shows the signal measured for each router. On the P2 floor plan, routers listed in the inventory are circles colored by signal: 0-24% red, 25-49% orange, 50-74% yellow, 75-100% green, and gray when no signal is available. Blue diamonds represent measured positions; the legend distinguishes both shapes. Each router row shows the `eduroam` BSSID with the highest mean signal and its observation count. “Not detected” means it was not seen in that point's captures; the app does not interpolate or treat it as 0%.
+
+The **Ver rangos de cobertura** button opens an exclusive view and hides the measurement table. Click **Elegir routers** to open the selector, where you can check one or more access points, select all, or clear the selection. The map shows only the checked routers. With one router selected, its range is filled using a true-alpha PNG layer so the floor plan remains visible; with multiple routers selected, their contours are shown to compare overlap. The map draws circles centered on each router: a linear fit between observed signal percentage and pixel distance estimates the 70% and 40% radii. The outer radius is capped at the farthest measured distance, and colors represent estimated zones (green ≥70%, yellow 40-69%, red <40%). At least two distinct measured distances are required per router. This is an approximate radial estimate: walls, orientation, and obstacles can make real coverage non-circular.
+
+The interface records the building, floor, plan identifier and selected plan path with each sample, together with the marked position. The path identifies the image used on this computer; when sharing the project, download the `FIC - P0.png` to `FIC - P4.png` plans from Moodle, select the required image with **Cargar plano...**, and optionally place it beside `wifi_scanner.py` for automatic discovery.
+
+### Use your own floor plan and measurements
+
+You can use your own PNG floor plan: select it with **Cargar plano...** and mark measurement positions directly on the image. Coordinates are stored in pixels relative to that image. Keep the **Edificio** and **Planta** fields consistent, because together they identify the plan for measurements (for example, `LAB-P1`); selecting those values again loads captures with the same identifier. New data is saved to `data/practica2/screenshots.jsonl`, or to `data/practica2/screenshots_all.jsonl` when scanning all visible networks. Captures are appended, not replaced.
+
+The GUI does not provide a picker for arbitrary JSONL files or data folders: it reads these two Practice 2 files and filters captures by the building-floor identifier. To keep other data separate, store or copy its JSONL files elsewhere and put them back in these locations when you want to view them; always make a backup before replacing them. From the command line, `--dataset practica1` and `--dataset practica2` select between the two supported datasets.
 
 ### Active connection
 
@@ -97,7 +106,7 @@ This mode queries the active connection and saves only the connected access poin
 python wifi_scanner.py --room "P1" --point-id "P1" --x 420 --y 318 --procedure "Laptop stationary at fixed height" --interval 3 --samples 10
 ```
 
-Replace `420` and `318` with coordinates read from the selected plan; do not reuse these illustrative values. Each run gets a `session_id`, and each capture gets a `sample_index`. Captures are appended to the file; a new run does not delete earlier captures. Omitting coordinates remains supported, and the notebook reports them as missing.
+Replace `420` and `318` with coordinates read from the selected plan; do not reuse these illustrative values. Each run gets a `session_id`, and each capture gets a `sample_index`. Captures are appended to the file; a new run does not delete earlier captures. Omitting coordinates remains supported, and the position field will not contain `x` and `y` values.
 
 ### All visible networks
 
@@ -141,32 +150,15 @@ Historical samples may not include every key in the current schema. In the data 
 
 ## 6. Charts and validation
 
-### Practice 02 analysis
+### Capture charts
 
-The [`validation/analisis_practica2.ipynb`](validation/analisis_practica2.ipynb) notebook reads both JSONL files and produces an AP summary for one point, a signal-versus-distance chart, and a plot of measured positions on the floor plan. Install Jupyter and Matplotlib if needed:
+Jupyter is not required to use the application. To generate charts from captures, use `validation/generate_chart.py`; install `matplotlib` if needed:
 
 ```cmd
-python -m pip install jupyter matplotlib
+python -m pip install matplotlib
 ```
 
-Open the notebook from Jupyter started in the project folder. It automatically reads `data/practica2/screenshots.jsonl` and `data/practica2/screenshots_all.jsonl`; it does not query the WiFi network. Original Moodle floor plans (`FIC - P0.png` to `FIC - P4.png`) are selected in the GUI and kept locally.
-
-Before running it, complete `coordinate_reference` in the local `config.json` with the plan, origin, axes, units, and `meters_per_unit` only if the plan has been calibrated. Add each AP's surveyed position to `access_points` using its capture `bssid` MAC address. Keep the plan image at the configured local path. Set `TARGET_POINT_ID` and `TARGET_BSSID` in the notebook to choose the analysis; when left as `None`, the most represented point and AP are selected.
-
-Example AP entry (replace these values with surveyed data; the coordinates are illustrative, not real measurements):
-
-```json
-{
-  "label": "AP1",
-  "bssid": "00:11:22:33:44:55",
-  "plan_id": "example-plan",
-  "x": 500,
-  "y": 300,
-  "units": "px"
-}
-```
-
-Distance is calculated only when an AP and capture have numeric coordinates on the same plan. Without plan calibration, distance is labeled in the plan's native units (for example, pixels), not meters. The chart and map do not mix RSSI in dBm with percentage quality, fill missing values, or interpolate unmeasured areas. Historical records without coordinates remain in the data files but are not plotted.
+The script can chart signal by capture index and filter by BSSID or SSID. The GUI's coverage mode provides the estimated radial view on the floor plan.
 
 To generate a chart of the active connection's RSSI and receive rate, run:
 

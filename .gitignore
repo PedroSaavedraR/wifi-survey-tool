@@ -9,6 +9,12 @@
 /memoria_practica1_redes_moviles.pdf
 /memoria_practica1_redes_moviles.tex
 
+# Documentos e imagenes locales que pueden contener datos personales o de ubicacion
+*.pdf
+*.png
+*.tex
+*.latex
+
 # Graficos y planos generados localmente
 /validation/*.png
 /validation/generate_floorplan.py

@@ -2,7 +2,7 @@
 
 [English](README.md) | [Español](README.es.md)
 
-Herramienta de línea de comandos para consultar y registrar la conexión WiFi activa y, opcionalmente, las redes visibles. Cada captura incluye una marca temporal y etiquetas de campaña y ubicación; puede incluir coordenadas sobre un plano para repetir medidas y analizarlas con el Notebook de la práctica 02.
+Herramienta de línea de comandos para consultar y registrar la conexión WiFi activa y, opcionalmente, las redes visibles. Cada captura incluye una marca temporal y etiquetas de campaña y ubicación; puede incluir coordenadas sobre un plano para repetir medidas y analizarlas con las herramientas Python del proyecto.
 
 ## 1. Entorno y requisitos
 
@@ -10,10 +10,10 @@ Herramienta de línea de comandos para consultar y registrar la conexión WiFi a
 * **Equipo de prueba:** Lenovo LOQ 15 con adaptador WiFi MediaTek MT7921.
 * **Intérprete:** Python 3.8 o posterior. La versión comprobada en el equipo de prueba es Python 3.14.6.
 * **Utilidades del sistema:** `netsh.exe` y la API WLAN nativa de Windows.
-* **Dependencias:** adquisición e interfaz gráfica con bibliotecas incluidas en Python para Windows (incluido Tkinter). Para generar los gráficos y ejecutar el Notebook, instale Jupyter y `matplotlib`:
+* **Dependencias:** adquisición e interfaz gráfica con bibliotecas incluidas en Python para Windows (incluido Tkinter). Para generar gráficos, instale `matplotlib`:
 
 ```cmd
-python -m pip install jupyter matplotlib
+python -m pip install matplotlib
 ```
 
 La opción `--all` solicita un escaneo mediante la API WLAN de Windows. En el equipo de prueba fue necesario habilitar los servicios de ubicación de Windows y ejecutar el recolector con privilegios de administrador para obtener redes visibles. Estos requisitos pueden variar según la versión de Windows, el adaptador y sus controladores.
@@ -34,17 +34,16 @@ Copy-Item config.example.json config.json
 
 Edite `config.json` con las etiquetas de equipo y campaña. Este archivo local queda excluido de Git.
 
-Instale Jupyter y `matplotlib` únicamente si desea generar los análisis y gráficos. El código del proyecto incluye:
+Instale `matplotlib` únicamente si desea generar gráficos. El código del proyecto incluye:
 
 * `wifi_scanner.py`: adquisición, etiquetado y almacenamiento de capturas.
 * `wifi_survey_gui.py`: selección de planta y posición sobre el plano e inicio de capturas de P2.
 * `config.example.json`: plantilla sin identificadores personales.
 * `validation/generate_chart.py`: generación de gráficos a partir de los datos.
-* `validation/analisis_practica2.ipynb`: Notebook de análisis de las capturas P2.
-* `validation/practica2_analysis.py` y `validation/map_measurements.py`: utilidades del Notebook y la vista de mapa.
+* `validation/practica2_analysis.py` y `validation/map_measurements.py`: funciones de análisis y utilidades de la vista de mapa.
 * `tests/test_practica2_analysis.py`: pruebas del análisis y las rutas de almacenamiento.
 
-El archivo `.gitignore` excluye la configuración local, las capturas JSONL, la memoria técnica y los resultados gráficos. Los planos originales `FIC - P0.png` a `FIC - P4.png` y `ap_list_up_*.csv` son materiales descargados de Moodle: no es necesario copiarlos al repositorio; la interfaz permite seleccionar el plano localmente. El recolector crea `data/` al ejecutarse.
+El archivo `.gitignore` excluye la configuración local, las capturas JSONL, la memoria técnica y los resultados gráficos. Los planos originales `FIC - P0.png` a `FIC - P4.png` y `ap_list_up_*.csv` son materiales descargados de Moodle y no se deben incluir en Git. Para ver la señal asociada a cada router, deja el CSV `ap_list_up_*.csv` en la carpeta del proyecto; el plano se puede seleccionar desde la interfaz. El recolector crea `data/` al ejecutarse.
 
 ## 3. Configuración
 
@@ -73,9 +72,19 @@ python wifi_survey_gui.py
 
 Selecciona la planta, carga su imagen si no aparece automáticamente y haz clic en tu posición. La imagen se muestra a su tamaño original: el origen es la esquina superior izquierda, X aumenta hacia la derecha, Y hacia abajo y las coordenadas guardadas son píxeles de esa imagen. Puedes desplazarte con las barras para llegar a cualquier zona. Completa el identificador del punto, la orientación y el número de capturas; pulsa **Iniciar capturas** para abrir el recolector en una terminal aparte. La interfaz guarda sus datos de la práctica 2 en `data/practica2/screenshots.jsonl`; al activar el escaneo de todas las redes usa `data/practica2/screenshots_all.jsonl` y requiere un intervalo mínimo de 5 segundos. Los JSONL de la práctica 1 en `data/screenshots.jsonl` y `data/screenshots_all.jsonl` no se modifican. Detén la adquisición con `Ctrl+C` en esa terminal.
 
-La interfaz muestra en el plano marcadores amarillos para las posiciones con medidas; el número indica cuántas capturas se hicieron allí. Haz clic cerca de un marcador para consultar la tabla de redes; la selección se ajusta al punto medido más cercano si está a menos de 24 píxeles. **Recargar datos** solo vuelve a leer el dataset. Para repetir la medición en ese sitio, pulsa **Medir de nuevo aquí**. Para medir en un punto distinto, haz clic en una zona libre del plano: la interfaz propone un identificador nuevo, que puedes editar, y pulsa **Iniciar capturas en posición seleccionada**. Al terminar, el marcador y la tabla se actualizan automáticamente. Si cancelas antes de que se guarde una muestra, se quita la selección provisional y no aparece un punto medido. El RSSI y las tasas Rx/Tx solo se muestran para el AP conectado: Windows no proporciona esas tasas para las redes vecinas.
+La interfaz muestra rombos azules para las posiciones con medidas; el número indica cuántas capturas se hicieron allí. Haz clic cerca de un rombo para consultar la tabla de redes; la selección se ajusta al punto medido más cercano si está a menos de 24 píxeles. **Recargar datos** solo vuelve a leer el dataset. Para repetir la medición en ese sitio, pulsa **Medir de nuevo aquí**. Para medir en un punto distinto, haz clic en una zona libre del plano: la interfaz propone un identificador nuevo, que puedes editar, y pulsa **Iniciar capturas en posición seleccionada**. Al terminar, el marcador y la tabla se actualizan automáticamente. Si cancelas antes de que se guarde una muestra, se quita la selección provisional y no aparece un punto medido. El RSSI y las tasas Rx/Tx solo se muestran para el AP conectado: Windows no proporciona esas tasas para las redes vecinas.
 
-La interfaz guarda junto a cada muestra el edificio, planta, identificador y ruta del plano seleccionado, además de la posición marcada. La ruta permite reconocer qué imagen se usó en este equipo; para compartir el proyecto, descarga los planos `FIC - P0.png` a `FIC - P4.png` de Moodle, selecciónalos con **Cargar plano...** y, si lo deseas, colócalos junto a `wifi_scanner.py` para que la interfaz los encuentre automáticamente. El Notebook de la práctica 2 lee los JSONL de `data/practica2/`.
+Al seleccionar un punto medido, la interfaz cruza los BSSID de `eduroam` detectados con las MAC de radio del inventario `ap_list_up_*.csv` y muestra la señal media observada para cada router. En el plano P2, los routers del inventario se dibujan como círculos: 0-24 % rojo, 25-49 % naranja, 50-74 % amarillo, 75-100 % verde y gris cuando no hay señal disponible. Los rombos azules representan los puntos medidos; la leyenda distingue ambas formas. Para cada router se muestra el BSSID de `eduroam` con mayor señal media y el número de muestras. «No detectado» significa que no apareció en las capturas de ese punto; no se interpola ni se convierte en un 0 %.
+
+El botón **Ver rangos de cobertura** abre un modo exclusivo y oculta la tabla de mediciones. Pulsa **Elegir routers** para abrir el selector; allí puedes marcar uno o varios puntos de acceso, seleccionar todos o quitar la selección. El mapa muestra solo los routers marcados. Cuando hay uno seleccionado, se rellena su rango con una capa PNG de transparencia real para mantener visible el plano; al marcar varios, se muestran sus contornos para comparar los solapamientos. Dibuja círculos centrados en cada router: el modelo ajusta una recta entre la señal porcentual observada y la distancia en píxeles para estimar los radios de 70 % y 40 %. El radio exterior se limita a la distancia de la muestra más lejana y los colores representan las zonas estimadas (verde ≥70 %, amarillo 40-69 %, rojo <40 %). Se necesitan al menos dos distancias de medida distintas por router. Es una estimación radial aproximada: paredes, orientación y obstáculos pueden hacer que la cobertura real no sea circular.
+
+La interfaz guarda junto a cada muestra el edificio, planta, identificador y ruta del plano seleccionado, además de la posición marcada. La ruta permite reconocer qué imagen se usó en este equipo; para compartir el proyecto, descarga los planos `FIC - P0.png` a `FIC - P4.png` de Moodle, selecciónalos con **Cargar plano...** y, si lo deseas, colócalos junto a `wifi_scanner.py` para que la interfaz los encuentre automáticamente.
+
+### Usar un plano y mediciones propios
+
+Puedes usar tu propio plano en formato PNG: selecciona la imagen con **Cargar plano...** y marca las posiciones directamente sobre ella. Las coordenadas se guardan en píxeles respecto a esa imagen. Usa los campos **Edificio** y **Planta** de forma consistente, porque juntos identifican el plano de las mediciones (por ejemplo, `LAB-P1`); al volver a elegir esos valores, la interfaz carga las capturas que tengan ese mismo identificador. Los nuevos datos se guardan en `data/practica2/screenshots.jsonl` o, si activas el escaneo de todas las redes, en `data/practica2/screenshots_all.jsonl`. Las capturas se añaden al final, no sustituyen las anteriores.
+
+La GUI no tiene un selector para abrir un JSONL arbitrario ni para elegir una carpeta de datos: lee esos dos archivos de la práctica 2 y filtra las capturas por el identificador edificio-planta. Si quieres mantener otros datos separados, guarda o copia sus JSONL fuera de esos archivos y vuelve a colocarlos allí cuando quieras consultarlos; conserva siempre una copia de seguridad antes de sustituirlos. Desde la línea de comandos, `--dataset practica1` y `--dataset practica2` permiten elegir uno de los dos conjuntos admitidos.
 
 ### Conexión activa
 
@@ -97,7 +106,7 @@ Este modo consulta la conexión activa y guarda únicamente el punto de acceso c
 python wifi_scanner.py --room "P1" --point-id "P1" --x 420 --y 318 --procedure "Portátil inmóvil a altura fija" --interval 3 --samples 10
 ```
 
-Sustituya `420` y `318` por las coordenadas leídas del plano elegido; no son valores de ejemplo que deban reutilizarse. Cada ejecución recibe un `session_id` y cada captura un `sample_index`. Las capturas se añaden al final del archivo; una ejecución nueva no elimina las anteriores. Si no se indican coordenadas, la adquisición sigue siendo compatible y el Notebook las señala como ausentes.
+Sustituya `420` y `318` por las coordenadas leídas del plano elegido; no son valores de ejemplo que deban reutilizarse. Cada ejecución recibe un `session_id` y cada captura un `sample_index`. Las capturas se añaden al final del archivo; una ejecución nueva no elimina las anteriores. Si no se indican coordenadas, la adquisición sigue siendo compatible y el campo de posición no incluye valores `x` e `y`.
 
 ### Todas las redes visibles
 
@@ -141,32 +150,15 @@ Las muestras históricas pueden no incluir todas las claves del esquema actual. 
 
 ## 6. Gráficos y validación
 
-### Análisis de la práctica 02
+### Gráficos de capturas
 
-El Notebook [`validation/analisis_practica2.ipynb`](validation/analisis_practica2.ipynb) lee ambos JSONL y produce el resumen de AP de un punto, la gráfica de señal frente a distancia y la representación de las posiciones medidas sobre el plano. Instale Jupyter y Matplotlib si aún no están disponibles:
+No hace falta Jupyter para usar la aplicación. Para generar gráficos de las capturas se utiliza `validation/generate_chart.py`; instala `matplotlib` si aún no está disponible:
 
 ```cmd
-python -m pip install jupyter matplotlib
+python -m pip install matplotlib
 ```
 
-Abre el Notebook desde Jupyter iniciado en la carpeta del proyecto. Lee automáticamente `data/practica2/screenshots.jsonl` y `data/practica2/screenshots_all.jsonl`; no necesita acceder a la red WiFi. Los planos originales de Moodle (`FIC - P0.png` a `FIC - P4.png`) se seleccionan desde la interfaz y se conservan localmente.
-
-Antes de ejecutarlo, complete en el `config.json` local `coordinate_reference` con el plano, origen, ejes, unidades y, solo si se ha calibrado, `meters_per_unit`. Añada a `access_points` la posición medida de cada AP usando su `bssid` (dirección MAC) de las capturas. Mantenga el archivo del plano local en la ruta configurada. En el Notebook se pueden fijar `TARGET_POINT_ID` y `TARGET_BSSID`; si quedan a `None`, se seleccionan los más representados en los datos.
-
-Ejemplo de entrada para un AP (sustituya los valores por los medidos; las coordenadas de ejemplo no son datos reales):
-
-```json
-{
-  "label": "AP1",
-  "bssid": "00:11:22:33:44:55",
-  "plan_id": "example-plan",
-  "x": 500,
-  "y": 300,
-  "units": "px"
-}
-```
-
-La distancia solo se calcula para un AP y una captura que tengan coordenadas numéricas en el mismo plano. Si no se calibra el plano, la distancia se etiqueta en sus unidades originales (por ejemplo, píxeles), no en metros. La gráfica y el mapa no mezclan RSSI en dBm con calidad porcentual, no rellenan ausencias ni interpolan áreas sin medidas. Los registros históricos sin coordenadas permanecen en los ficheros, pero no aparecen en estos gráficos.
+El script permite representar la señal frente al índice de captura y filtrar por BSSID o SSID. El modo de rangos de la interfaz gráfica ofrece la visualización radial estimada sobre el plano.
 
 Para generar el gráfico de RSSI y tasa de recepción de la conexión activa, ejecute:
 
