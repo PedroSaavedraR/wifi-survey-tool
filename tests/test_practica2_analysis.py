@@ -15,6 +15,7 @@ from validation.practica2_analysis import (
     summarize_signal_methods,
 )
 from validation.map_measurements import (
+    FIC_P2_METERS_PER_PIXEL,
     build_router_coverage_models,
     load_access_point_inventory,
     load_map_measurements,
@@ -129,6 +130,24 @@ class PracticeTwoAnalysisTests(unittest.TestCase):
             default_meters_per_unit=0.1,
         )
         self.assertEqual(distances[0]["distance"], 0.5)
+        self.assertEqual(distances[0]["distance_units"], "m")
+
+    def test_fic_p2_scale_bar_calibrates_pixel_distance_to_meters(self):
+        distances = observations_with_distances(
+            self.observations,
+            [{
+                "bssid_hash": "ap-hash",
+                "plan_id": "floor-1",
+                "x": 0,
+                "y": 0,
+                "units": "px",
+            }],
+            "ap-hash",
+            default_plan_id="floor-1",
+            default_meters_per_unit=FIC_P2_METERS_PER_PIXEL,
+        )
+
+        self.assertAlmostEqual(distances[0]["distance"], 50 / 107)
         self.assertEqual(distances[0]["distance_units"], "m")
 
     def test_raw_bssid_matches_configured_access_point_position(self):

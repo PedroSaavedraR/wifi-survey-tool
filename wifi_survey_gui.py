@@ -1,4 +1,5 @@
 import base64
+import json
 import math
 import os
 import struct
@@ -9,11 +10,20 @@ import zlib
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 
 PROJECT_DIR = Path(__file__).resolve().parent
 FLOORS = [f"P{number}" for number in range(5)]
 sys.path.insert(0, str(PROJECT_DIR / "validation"))
+from practica2_analysis import build_observations
+from practica3_analysis import (
+    _filter_model_rows,
+    measure_reference_level,
+    plot_propagation_comparison,
+)
 from map_measurements import (
+    FIC_P2_METERS_PER_PIXEL,
     build_router_coverage_models,
     load_access_point_inventory,
     load_map_measurements,
@@ -84,9 +94,13 @@ class SurveyApp:
         self.coverage_models = []
         self.inventory_error = None
         self.coverage_mode = False
+        self.propagation_window = None
         self.coverage_router_selector = None
         self.coverage_router_selector_checks = {}
         self.coverage_fill_images = []
+        self.propagation_plot_frame = None
+        self.propagation_canvas = None
+        self._capture_after_id = None
 
         self.building_var = tk.StringVar(value="FIC")
         self.floor_var = tk.StringVar(value="P1")
@@ -105,7 +119,8 @@ class SurveyApp:
 
         self.build_controls()
         self.floor_var.trace_add("write", self.on_floor_change)
-        self.root.after(1000, self.check_capture_process)
+        self.root.protocol("WM_DELETE_WINDOW", self.on_root_close)
+        self._capture_after_id = self.root.after(1000, self.check_capture_process)
         self.load_default_plan()
 
     def build_controls(self):
@@ -373,6 +388,12 @@ class SurveyApp:
             command=self.toggle_coverage_mode,
         )
         self.coverage_button.pack(side=tk.LEFT, padx=(6, 0))
+        self.compare_models_button = ttk.Button(
+            actions,
+            text="Comparar modelos",
+            command=self.open_propagation_analysis_window,
+        )
+        self.compare_models_button.pack(side=tk.LEFT, padx=(6, 0))
         self.status_label = ttk.Label(actions, textvariable=self.status_text)
         self.status_label.pack(side=tk.LEFT, padx=12)
 
@@ -412,6 +433,264 @@ class SurveyApp:
         self.position_label.pack(anchor=tk.W, before=self.actions_frame)
         self.capture_button.pack(side=tk.LEFT, before=self.coverage_button)
         self.refresh_measurements()
+
+    def _current_plan_id(self):
+        building = self.building_var.get().strip()
+        floor = self.floor_var.get().strip()
+        if not building or not floor:
+            return None
+        return f"{building}-{floor}"
+
+    def available_ap_candidates(self):
+        plan_id = self._current_plan_id()
+        if plan_id is None:
+            return {}
+        inventory_files = list(PROJECT_DIR.glob("ap_list_up_*.csv"))
+        if not inventory_files:
+            return {}
+        inventory_path = max(inventory_files, key=lambda path: path.stat().st_mtime)
+        try:
+            access_points = load_access_point_inventory(inventory_path, plan_id)
+        except (OSError, ValueError):
+            return {}
+        if not access_points:
+            return {}
+
+        data_dir = PROJECT_DIR / "data" / "practica2"
+        capture_file = data_dir / "screenshots_all.jsonl"
+        if not capture_file.exists():
+            capture_file = data_dir / "screenshots.jsonl"
+        if not capture_file.exists():
+            return {}
+
+        bssid_to_ap = {}
+        with capture_file.open("r", encoding="utf-8") as handle:
+            records = [json.loads(line) for line in handle if line.strip()]
+        observations = build_observations(records)
+        for row in observations:
+            if row.get("plan_id") != plan_id or row.get("bssid") is None:
+                continue
+            if row.get("rssi_dbm") is None:
+                continue
+            bssid = row["bssid"]
+            for access_point in access_points:
+                prefix = (access_point.get("bssid_prefix") or "").strip()
+                if not prefix:
+                    continue
+                if bssid.casefold().startswith(prefix.casefold() + ":"):
+                    bssid_to_ap.setdefault(access_point.get("name") or prefix, set()).add(bssid)
+                    break
+        return {
+            name: sorted(bssids)
+            for name, bssids in sorted(bssid_to_ap.items())
+        }
+
+    def resolve_ap_name_to_bssid(self, name_or_bssid):
+        if not name_or_bssid:
+            return None
+        if ":" in name_or_bssid:
+            return name_or_bssid.upper()
+        candidates = self.available_ap_candidates()
+        values = candidates.get(name_or_bssid)
+        if not values:
+            return None
+        return values[0]
+
+    def open_propagation_analysis_window(self):
+        if self.plan_image is None:
+            messagebox.showwarning(
+                "Falta un plano",
+                "Carga un plano antes de comparar modelos de propagación.",
+            )
+            return
+
+        if self.propagation_window is not None and self.propagation_window.winfo_exists():
+            self.propagation_window.lift()
+            self.propagation_window.focus_set()
+            return
+
+        ap_candidates = self.available_ap_candidates()
+        window = tk.Toplevel(self.root)
+        self.propagation_window = window
+        window.title("Comparación de modelos de propagación")
+        window.transient(self.root)
+        window.geometry("900x680")
+        window.resizable(True, True)
+
+        main = ttk.Frame(window, padding=12)
+        main.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(main, text="Comparador de modelos de propagación", font=("Segoe UI", 12, "bold")).pack(anchor=tk.W)
+        ttk.Label(main, text="Selecciona el AP, d0 y la diferencia de altura Δh.").pack(anchor=tk.W, pady=(4, 12))
+
+        controls = ttk.Frame(main)
+        controls.pack(fill=tk.X)
+        ttk.Label(controls, text="AP").grid(row=0, column=0, sticky=tk.W, padx=(0, 8))
+        ap_var = tk.StringVar()
+        ap_combo = ttk.Combobox(controls, textvariable=ap_var, state="readonly", width=35)
+        ap_combo.grid(row=0, column=1, sticky=tk.W)
+        ap_names = list(ap_candidates)
+        if ap_names:
+            ap_combo["values"] = ap_names
+            ap_var.set(ap_names[0])
+        else:
+            ap_combo["values"] = []
+            ap_var.set("")
+
+        ttk.Label(controls, text="d0 (m)").grid(row=0, column=2, sticky=tk.W, padx=(8, 8))
+        d0_var = tk.StringVar(value="1.0")
+        ttk.Entry(controls, textvariable=d0_var, width=10).grid(row=0, column=3, sticky=tk.W)
+
+        ttk.Label(controls, text="Δh (m)").grid(row=0, column=4, sticky=tk.W, padx=(8, 8))
+        delta_h_var = tk.StringVar(value="0.0")
+        ttk.Entry(controls, textvariable=delta_h_var, width=8).grid(row=0, column=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Punto ref.").grid(row=1, column=0, sticky=tk.W, pady=(8, 0))
+        reference_point_var = tk.StringVar()
+        ttk.Entry(controls, textvariable=reference_point_var, width=26).grid(
+            row=1, column=1, sticky=tk.W, pady=(8, 0)
+        )
+        ttk.Label(
+            controls,
+            text="Opcional; si se indica, d0 debe coincidir con la distancia de ese punto.",
+        ).grid(row=1, column=2, columnspan=4, sticky=tk.W, padx=(8, 0), pady=(8, 0))
+
+        ttk.Button(
+            controls,
+            text="Calcular",
+            command=lambda: self.run_propagation_analysis(
+                ap_var.get(),
+                d0_var.get(),
+                delta_h_var.get(),
+                reference_point_var.get(),
+                window,
+            ),
+        ).grid(row=0, column=6, rowspan=2, sticky=tk.W, padx=(12, 0))
+        controls.columnconfigure(1, weight=1)
+
+        output_var = tk.StringVar(value="Pulsa ‘Calcular’ para comparar los modelos.")
+        ttk.Label(main, textvariable=output_var, justify=tk.LEFT, wraplength=700).pack(anchor=tk.W, pady=(12, 8))
+
+        self.propagation_output_var = output_var
+        self.propagation_plot_frame = ttk.Frame(main)
+        self.propagation_plot_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        self.propagation_canvas = None
+
+        ttk.Button(main, text="Cerrar", command=self.close_propagation_analysis_window).pack(anchor=tk.E, pady=(8, 0))
+        window.protocol("WM_DELETE_WINDOW", self.close_propagation_analysis_window)
+
+    def close_propagation_analysis_window(self):
+        if self.propagation_window is not None and self.propagation_window.winfo_exists():
+            self.propagation_window.destroy()
+        self.propagation_window = None
+
+    def run_propagation_analysis(self, ap_name, d0_text, delta_h_text, reference_point_text, window):
+        if not ap_name:
+            messagebox.showwarning("Sin AP", "No hay puntos de acceso con RSSI válidas para esta planta.")
+            return
+        bssid = self.resolve_ap_name_to_bssid(ap_name)
+        if not bssid:
+            messagebox.showwarning("AP no válido", f"No se ha podido asociar '{ap_name}' a un BSSID capturado.")
+            return
+        try:
+            d0 = float(d0_text)
+            delta_h = float(delta_h_text)
+        except ValueError:
+            messagebox.showerror("Valor no válido", "d0 debe ser positivo y Δh no negativo.")
+            return
+        if not math.isfinite(d0) or d0 <= 0:
+            messagebox.showerror("Valor no válido", "d0 debe ser un número positivo finito.")
+            return
+        if not math.isfinite(delta_h) or delta_h < 0:
+            messagebox.showerror("Valor no válido", "Δh debe ser un número finito no negativo.")
+            return
+
+        plan_id = self._current_plan_id()
+        inventory_files = list(PROJECT_DIR.glob("ap_list_up_*.csv"))
+        if not inventory_files:
+            messagebox.showerror("Inventario no disponible", "No se encontró ap_list_up_*.csv en la carpeta del proyecto.")
+            return
+        inventory_path = max(inventory_files, key=lambda path: path.stat().st_mtime)
+
+        output_path = PROJECT_DIR / "validation" / "propagation_model_gui.png"
+        try:
+            data_dir = PROJECT_DIR / "data" / "practica2"
+            capture_file = data_dir / "screenshots_all.jsonl"
+            if not capture_file.exists():
+                capture_file = data_dir / "screenshots.jsonl"
+            if not capture_file.exists():
+                raise ValueError(f"No se encontró el archivo de capturas en {data_dir}.")
+
+            with capture_file.open("r", encoding="utf-8") as handle:
+                records = [json.loads(line) for line in handle if line.strip()]
+            observations = build_observations(records)
+            access_points = load_access_point_inventory(inventory_path, plan_id)
+            rows = _filter_model_rows(
+                observations,
+                bssid,
+                access_points=access_points,
+                plan_id=plan_id,
+                default_plan_id=plan_id,
+                default_meters_per_unit=(
+                    FIC_P2_METERS_PER_PIXEL
+                    if plan_id and plan_id.casefold() == "fic-p2"
+                    else None
+                ),
+                delta_h_m=delta_h,
+            )
+            reference = None
+            reference_point_id = reference_point_text.strip()
+            if reference_point_id:
+                reference = measure_reference_level(rows, reference_point_id)
+                if not math.isclose(d0, reference["d0"], rel_tol=1e-6, abs_tol=0.005):
+                    raise ValueError(
+                        f"d0 debe coincidir con la distancia del punto de referencia "
+                        f"({reference['d0']:.3f} m)."
+                    )
+                d0 = reference["d0"]
+            figure, summary = plot_propagation_comparison(
+                rows,
+                d0,
+                output_path=str(output_path),
+                reference_A=reference["A"] if reference else None,
+            )
+        except ValueError as error:
+            messagebox.showerror("No se pudo ajustar el modelo", str(error))
+            return
+
+        message_lines = [
+            f"AP = {ap_name}",
+            f"Δh = {delta_h:.2f} m",
+        ]
+        if reference:
+            message_lines.append(
+                f"A referencia = {reference['A']:.2f} dBm "
+                f"({reference['measurements']} medidas)"
+            )
+        message_lines.extend([
+            f"A n=2 = {summary['model_1']['A']:.2f} dBm",
+            f"A ajustado = {summary['model_2']['A']:.2f} dBm",
+            f"d0 = {summary['d0']:.2f} m",
+            f"n fijo = {summary['model_1']['n']:.2f}",
+            f"n ajustado = {summary['model_2']['n']:.4f}",
+            f"MAE fijo = {summary['model_1']['MAE']:.2f} dB",
+            f"MAE ajustado = {summary['model_2']['MAE']:.2f} dB",
+            f"RMSE fijo = {summary['model_1']['RMSE']:.2f} dB",
+            f"RMSE ajustado = {summary['model_2']['RMSE']:.2f} dB",
+            f"sigma = {summary['model_2']['sigma']:.2f} dB",
+            f"Medidas usadas = {summary['total_measurements']}",
+        ])
+        message = "\n".join(message_lines)
+        self.propagation_output_var.set(message)
+        self.status_text.set(f"Modelo de propagación comparado para {ap_name} en {plan_id}.")
+
+        if self.propagation_canvas is not None:
+            self.propagation_canvas.get_tk_widget().destroy()
+            self.propagation_canvas = None
+
+        self.propagation_canvas = FigureCanvasTkAgg(figure, master=self.propagation_plot_frame)
+        self.propagation_canvas.draw()
+        self.propagation_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def default_plan_path(self):
         building = self.building_var.get().strip()
@@ -1118,27 +1397,39 @@ class SurveyApp:
             f"Captura iniciada para {point_id} en {floor}, coordenadas ({x}, {y}) px."
         )
 
+    def on_root_close(self):
+        if self.capture_process is not None and self.capture_process.poll() is None:
+            self.capture_process.terminate()
+        if self._capture_after_id is not None:
+            try:
+                self.root.after_cancel(self._capture_after_id)
+            except tk.TclError:
+                pass
+            self._capture_after_id = None
+        self.root.destroy()
+
     def check_capture_process(self):
-        if self.capture_process is not None:
-            return_code = self.capture_process.poll()
-            if return_code is not None:
-                self.capture_process = None
-                self.refresh_measurements()
-                if (
-                    self.capture_position is not None
-                    and self.capture_position not in self.measured_points
-                    and self.selected_position == self.capture_position
-                ):
-                    self.canvas.delete("selection")
-                    self.selected_position = None
-                    self.displayed_point_position = None
-                    self.position_text.set("No se guardaron capturas en la posición cancelada.")
-                    self.measurements_summary.set(
-                        "La adquisición terminó sin guardar medidas en este punto."
-                    )
-                self.capture_position = None
-                self.status_text.set(f"Captura finalizada (código {return_code}).")
-        self.root.after(1000, self.check_capture_process)
+        if self.root is not None and self.root.winfo_exists():
+            if self.capture_process is not None:
+                return_code = self.capture_process.poll()
+                if return_code is not None:
+                    self.capture_process = None
+                    self.refresh_measurements()
+                    if (
+                        self.capture_position is not None
+                        and self.capture_position not in self.measured_points
+                        and self.selected_position == self.capture_position
+                    ):
+                        self.canvas.delete("selection")
+                        self.selected_position = None
+                        self.displayed_point_position = None
+                        self.position_text.set("No se guardaron capturas en la posición cancelada.")
+                        self.measurements_summary.set(
+                            "La adquisición terminó sin guardar medidas en este punto."
+                        )
+                    self.capture_position = None
+                    self.status_text.set(f"Captura finalizada (código {return_code}).")
+            self._capture_after_id = self.root.after(1000, self.check_capture_process)
 
 def main():
     root = tk.Tk()

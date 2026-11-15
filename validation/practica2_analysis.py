@@ -1,6 +1,6 @@
 import json
 import math
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import mean, median
 
@@ -240,7 +240,14 @@ def observations_with_distances(
     return result
 
 
-def plot_signal_distance(observations, bssid, metric, metric_units, output_path=None):
+def plot_signal_distance(
+    observations,
+    bssid,
+    metric,
+    metric_units,
+    output_path=None,
+    metric_label=None,
+):
     import matplotlib.pyplot as plt
 
     rows = [
@@ -254,17 +261,44 @@ def plot_signal_distance(observations, bssid, metric, metric_units, output_path=
 
     distance_units = rows[0]["distance_units"]
     figure, axis = plt.subplots(figsize=(9, 5.5))
-    axis.scatter(
-        [row["distance"] for row in rows],
-        [row[metric] for row in rows],
-        alpha=0.8,
-        edgecolors="white",
-        linewidths=0.4,
-    )
-    axis.set_xlabel(f"Distance to AP ({distance_units})")
-    axis.set_ylabel(f"{metric} ({metric_units})")
-    axis.set_title(f"Observed WiFi signal by distance — AP {bssid}")
+    sessions = {}
+    for row in rows:
+        session_id = row.get("session_id") or "sin-id"
+        sessions.setdefault(session_id, []).append(row)
+    for session_id, session_rows in sorted(sessions.items()):
+        point_ids = sorted({
+            row["point_id"] for row in session_rows if row.get("point_id")
+        })
+        session_label = session_id[:8]
+        if point_ids:
+            session_label = f"{', '.join(point_ids)} ({session_label})"
+        coincident_observations = defaultdict(int)
+        for row in session_rows:
+            coincident_observations[(row["distance"], row[metric])] += 1
+        axis.scatter(
+            [row["distance"] for row in session_rows],
+            [row[metric] for row in session_rows],
+            alpha=0.8,
+            edgecolors="white",
+            linewidths=0.4,
+            label=session_label,
+        )
+        for (distance, value), count in coincident_observations.items():
+            if count > 1:
+                axis.annotate(
+                    f"×{count}",
+                    (distance, value),
+                    xytext=(4, 4),
+                    textcoords="offset points",
+                    fontsize=7,
+                )
+    axis.set_xlabel(f"Distancia al AP ({distance_units})")
+    axis.set_ylabel(f"{metric_label or metric} ({metric_units})")
+    if metric == "signal_percent":
+        axis.set_ylim(0, 100)
+    axis.set_title(f"Calidad Wi-Fi frente a distancia — AP {bssid}")
     axis.grid(True, linestyle="--", alpha=0.4)
+    axis.legend(title="Punto (sesión)", fontsize=7)
     figure.tight_layout()
     if output_path:
         figure.savefig(output_path, dpi=200)
@@ -280,6 +314,7 @@ def plot_floorplan(
     plan_file,
     default_plan_id=None,
     output_path=None,
+    metric_label=None,
 ):
     import matplotlib.image as mpimg
     import matplotlib.pyplot as plt
@@ -322,18 +357,41 @@ def plot_floorplan(
         [point[2] for point in points],
         c=[median(groups[point]) for point in points],
         cmap="RdYlGn",
+        vmin=0 if metric == "signal_percent" else None,
+        vmax=100 if metric == "signal_percent" else None,
         edgecolors="black",
         linewidths=0.7,
         s=85,
     )
     for point in points:
         if point[0]:
-            axis.annotate(str(point[0]), (point[1], point[2]), xytext=(5, 5), textcoords="offset points")
+            point_label = str(point[0])
+            if point_label.startswith("Clase "):
+                point_label = f"C{point_label[len('Clase '):]}"
+            elif point_label.startswith("Pasillo "):
+                point_label = point_label[len("Pasillo "):]
+            axis.annotate(
+                point_label,
+                (point[1], point[2]),
+                xytext=(5, 5),
+                textcoords="offset points",
+                fontsize=7,
+                bbox={
+                    "boxstyle": "round,pad=0.15",
+                    "facecolor": "white",
+                    "edgecolor": "none",
+                    "alpha": 0.75,
+                },
+            )
     axis.scatter([ap_x], [ap_y], marker="*", c="blue", edgecolors="white", s=230, label="AP")
-    figure.colorbar(scatter, ax=axis, label=f"Median {metric} ({metric_units})")
-    axis.set_title(f"Measured positions on plan — AP {bssid}")
-    axis.set_xlabel("x (plan coordinates)")
-    axis.set_ylabel("y (plan coordinates)")
+    figure.colorbar(
+        scatter,
+        ax=axis,
+        label=f"Mediana de {metric_label or metric} ({metric_units})",
+    )
+    axis.set_title(f"Mediciones sobre el plano — AP {bssid}")
+    axis.set_xlabel("x (coordenadas del plano)")
+    axis.set_ylabel("y (coordenadas del plano)")
     axis.legend()
     figure.tight_layout()
     if output_path:

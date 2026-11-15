@@ -6,6 +6,10 @@ from pathlib import Path
 from statistics import mean
 
 
+# The 0–10 m graphic scale spans approximately 107 px in the bundled FIC-P2 image.
+FIC_P2_METERS_PER_PIXEL = 10 / 107
+
+
 # Router marker centers on the bundled FIC - P2.png floor plan.
 FIC_P2_ACCESS_POINT_POSITIONS = {
     "INFOR-A04-2-02-2158": (298, 101),
